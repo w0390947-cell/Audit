@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditAiMapper">
+
+    <resultMap id="AuditAiTaskResult" type="AuditAiTask">
+        <result property="aiTaskId" column="ai_task_id"/>
+        <result property="reviewTaskId" column="review_task_id"/>
+        <result property="taskNo" column="task_no"/>
+        <result property="productName" column="product_name"/>
+        <result property="deliveryUnit" column="delivery_unit"/>
+        <result property="submitter" column="submitter"/>
+        <result property="priority" column="priority"/>
+        <result property="queuePosition" column="queue_position"/>
+        <result property="taskStatus" column="task_status"/>
+        <result property="estimatedDuration" column="estimated_duration"/>
+        <result property="progressPercent" column="progress_percent"/>
+        <result property="progressText" column="progress_text"/>
+        <result property="aiAnalysisCount" column="ai_analysis_count"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reportFileName" column="report_file_name"/>
+        <result property="reportFileUrl" column="report_file_url"/>
+        <result property="basisFileUrls" column="basis_file_urls"/>
+        <result property="aiSummary" column="ai_summary"/>
+        <result property="reviewOpinion" column="review_opinion"/>
+        <result property="reviewer" column="reviewer"/>
+        <result property="submitTime" column="submit_time"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <resultMap id="AuditAiFindingResult" type="AuditAiFinding">
+        <result property="findingId" column="finding_id"/>
+        <result property="aiTaskId" column="ai_task_id"/>
+        <result property="findingType" column="finding_type"/>
+        <result property="findingTitle" column="finding_title"/>
+        <result property="findingContent" column="finding_content"/>
+        <result property="sortNum" column="sort_num"/>
+    </resultMap>
+
+    <sql id="selectAuditAiTaskVo">
+        select a.ai_task_id, a.review_task_id, a.task_no, a.product_name, a.delivery_unit, a.submitter, a.priority,
+               a.queue_position, a.task_status, a.estimated_duration, a.progress_percent, a.progress_text,
+               a.ai_analysis_count, a.review_status, a.report_file_name, a.report_file_url,
+               r.basis_file_urls,
+               a.ai_summary, a.review_opinion, a.reviewer, a.submit_time, a.del_flag, a.create_by, a.create_time,
+               a.update_by, a.update_time, a.remark
+        from audit_ai_task a
+        left join audit_review_task r on r.task_id = a.review_task_id
+    </sql>
+
+    <select id="selectAuditAiTaskList" parameterType="AuditAiTask" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        <where>
+            a.del_flag = '0'
+            <if test="keyword != null and keyword != ''">
+                and (a.task_no like concat('%', #{keyword}, '%')
+                    or a.product_name like concat('%', #{keyword}, '%'))
+            </if>
+            <if test="priority != null and priority != ''">
+                and a.priority = #{priority}
+            </if>
+            <if test="taskStatus != null and taskStatus != ''">
+                and a.task_status = #{taskStatus}
+            </if>
+            <if test="submitter != null and submitter != ''">
+                and a.submitter = #{submitter}
+            </if>
+        </where>
+        order by case a.task_status
+            when 'executing' then 1
+            when 'waiting' then 2
+            when 'paused' then 3
+            else 4 end asc,
+            a.queue_position asc, a.ai_task_id asc
+    </select>
+
+    <select id="selectAuditAiAllList" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        where a.del_flag = '0'
+        order by a.queue_position asc, a.ai_task_id asc
+    </select>
+
+    <select id="selectAuditAiTaskById" parameterType="Long" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        where a.ai_task_id = #{aiTaskId} and a.del_flag = '0'
+    </select>
+
+    <select id="selectAuditAiFindingListByTaskId" parameterType="Long" resultMap="AuditAiFindingResult">
+        select finding_id, ai_task_id, finding_type, finding_title, finding_content, sort_num
+        from audit_ai_finding
+        where ai_task_id = #{aiTaskId}
+        order by sort_num asc, finding_id asc
+    </select>
+
+    <select id="selectAuditAiFindingListByReviewTaskId" parameterType="Long" resultMap="AuditAiFindingResult">
+        select f.finding_id, f.ai_task_id, f.finding_type, f.finding_title, f.finding_content, f.sort_num
+        from audit_ai_finding f
+        inner join audit_ai_task t on t.ai_task_id = f.ai_task_id
+        where t.review_task_id = #{reviewTaskId}
+          and t.del_flag = '0'
+        order by t.update_time desc, t.ai_task_id desc, f.sort_num asc, f.finding_id asc
+    </select>
+
+    <select id="selectAuditAiTaskListByIds" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        where a.ai_task_id in
+        <foreach item="aiTaskId" collection="array" open="(" separator="," close=")">
+            #{aiTaskId}
+        </foreach>
+    </select>
+
+    <select id="selectAuditAiSubmitterList" resultType="String">
+        select distinct submitter
+        from audit_ai_task
+        where del_flag = '0' and submitter is not null and submitter != ''
+        order by submitter asc
+    </select>
+
+    <insert id="insertAuditAiTask" parameterType="AuditAiTask" useGeneratedKeys="true" keyProperty="aiTaskId">
+        insert into audit_ai_task (
+            review_task_id, task_no, product_name, delivery_unit, submitter, priority, queue_position,
+            task_status, estimated_duration, progress_percent, progress_text, ai_analysis_count, review_status,
+            report_file_name, report_file_url, ai_summary, review_opinion, reviewer, submit_time,
+            create_by, create_time, remark
+        ) values (
+            #{reviewTaskId}, #{taskNo}, #{productName}, #{deliveryUnit}, #{submitter}, #{priority}, #{queuePosition},
+            #{taskStatus}, #{estimatedDuration}, #{progressPercent}, #{progressText}, #{aiAnalysisCount}, #{reviewStatus},
+            #{reportFileName}, #{reportFileUrl}, #{aiSummary}, #{reviewOpinion}, #{reviewer}, #{submitTime},
+            #{createBy}, sysdate(), #{remark}
+        )
+    </insert>
+
+    <update id="updateAuditAiTaskStatus">
+        update audit_ai_task
+        set task_status = #{taskStatus},
+            progress_text = #{progressText},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+    </update>
+
+    <update id="updateAuditAiTaskQueue">
+        update audit_ai_task
+        set priority = #{priority},
+            queue_position = #{queuePosition},
+            task_status = #{taskStatus},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+    </update>
+
+    <update id="updateAuditAiReviewDecision" parameterType="AuditAiTask">
+        update audit_ai_task
+        <set>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="reviewOpinion != null">review_opinion = #{reviewOpinion},</if>
+            <if test="reviewer != null and reviewer != ''">reviewer = #{reviewer},</if>
+            <if test="taskStatus != null and taskStatus != ''">task_status = #{taskStatus},</if>
+            <if test="progressPercent != null">progress_percent = #{progressPercent},</if>
+            <if test="progressText != null">progress_text = #{progressText},</if>
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where ai_task_id = #{aiTaskId}
+    </update>
+
+    <delete id="deleteAuditAiFindingByTaskIds">
+        delete from audit_ai_finding where ai_task_id in
+        <foreach item="aiTaskId" collection="array" open="(" separator="," close=")">
+            #{aiTaskId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteAuditAiTaskByIds">
+        delete from audit_ai_task where ai_task_id in
+        <foreach item="aiTaskId" collection="array" open="(" separator="," close=")">
+            #{aiTaskId}
+        </foreach>
+    </delete>
+
+    <!-- FastGPT 集成相关方法 -->
+
+    <insert id="insertAuditAiFinding" parameterType="AuditAiFinding">
+        insert into audit_ai_finding
+            (ai_task_id, finding_type, finding_title, finding_content, sort_num)
+        values
+            (#{aiTaskId}, #{findingType}, #{findingTitle}, #{findingContent}, #{sortNum})
+    </insert>
+
+    <update id="updateAuditAiAnalysisResult" parameterType="AuditAiTask">
+        update audit_ai_task
+        <set>
+            <if test="taskStatus != null and taskStatus != ''">task_status = #{taskStatus},</if>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="progressPercent != null">progress_percent = #{progressPercent},</if>
+            <if test="progressText != null">progress_text = #{progressText},</if>
+            <if test="aiSummary != null">ai_summary = #{aiSummary},</if>
+            ai_analysis_count = ifnull(ai_analysis_count, 0) + 1,
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where ai_task_id = #{aiTaskId}
+    </update>
+
+    <update id="updateAuditAiAnalysisFailure">
+        update audit_ai_task
+        set task_status = 'paused',
+            progress_text = #{progressText},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+    </update>
+
+    <update id="updateAuditAiTaskExecuting">
+        update audit_ai_task
+        set task_status = 'executing',
+            progress_percent = #{progressPercent},
+            progress_text = #{progressText},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+          and del_flag = '0'
+          and task_status != 'executing'
+    </update>
+
+    <update id="requeueAuditAiTask">
+        update audit_ai_task
+        set task_status = 'waiting',
+            progress_percent = #{progressPercent},
+            progress_text = #{progressText},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+          and del_flag = '0'
+          and task_status != 'executing'
+    </update>
+
+    <select id="selectRunnableAiTaskList" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        where a.del_flag = '0'
+          and a.task_status = 'waiting'
+        order by case a.priority
+            when 'high' then 1
+            when 'medium' then 2
+            else 3 end asc,
+            a.queue_position asc,
+            a.ai_task_id asc
+        limit #{limit}
+    </select>
+
+    <select id="countRunningAiTask" resultType="int">
+        select count(1)
+        from audit_ai_task
+        where del_flag = '0'
+          and task_status = 'executing'
+    </select>
+</mapper>

@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditAssetMapper">
+
+    <resultMap id="AuditAssetRecordResult" type="AuditAssetRecord">
+        <result property="assetId" column="asset_id"/>
+        <result property="reviewTaskId" column="review_task_id"/>
+        <result property="taskNo" column="task_no"/>
+        <result property="productName" column="product_name"/>
+        <result property="deliveryUnit" column="delivery_unit"/>
+        <result property="submitter" column="submitter"/>
+        <result property="reviewer" column="reviewer"/>
+        <result property="permissionOwner" column="permission_owner"/>
+        <result property="aiAnalysisCount" column="ai_analysis_count"/>
+        <result property="currentAiVersion" column="current_ai_version"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reviewTime" column="review_time"/>
+        <result property="reportFileName" column="report_file_name"/>
+        <result property="reportFileUrl" column="report_file_url"/>
+        <result property="aiOpinion" column="ai_opinion"/>
+        <result property="finalOpinion" column="final_opinion"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <resultMap id="AuditAssetAiVersionResult" type="AuditAssetAiVersion">
+        <result property="versionId" column="version_id"/>
+        <result property="assetId" column="asset_id"/>
+        <result property="versionNo" column="version_no"/>
+        <result property="wordCountText" column="word_count_text"/>
+        <result property="currentFlag" column="current_flag"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="AuditAssetAiStepResult" type="AuditAssetAiStep">
+        <result property="stepId" column="step_id"/>
+        <result property="versionId" column="version_id"/>
+        <result property="stepNo" column="step_no"/>
+        <result property="stepTitle" column="step_title"/>
+        <result property="stepContent" column="step_content"/>
+        <result property="stepTime" column="step_time"/>
+        <result property="sortNum" column="sort_num"/>
+    </resultMap>
+
+    <resultMap id="AuditAssetResubmitRecordResult" type="AuditAssetResubmitRecord">
+        <result property="recordId" column="record_id"/>
+        <result property="assetId" column="asset_id"/>
+        <result property="versionNo" column="version_no"/>
+        <result property="submitter" column="submitter"/>
+        <result property="submitTime" column="submit_time"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileUrl" column="file_url"/>
+        <result property="imageUrls" column="image_urls"/>
+        <result property="sortNum" column="sort_num"/>
+    </resultMap>
+
+    <sql id="selectAuditAssetRecordVo">
+        select asset_id, review_task_id, task_no, product_name, delivery_unit, submitter, reviewer, permission_owner,
+               ai_analysis_count, current_ai_version, review_status, review_time, report_file_name, report_file_url,
+               ai_opinion, final_opinion, del_flag, create_by, create_time, update_by, update_time, remark
+        from audit_asset_record
+    </sql>
+
+    <select id="selectAuditAssetRecordList" parameterType="AuditAssetRecord" resultMap="AuditAssetRecordResult">
+        <include refid="selectAuditAssetRecordVo"/>
+        <where>
+            del_flag = '0'
+            <if test="keyword != null and keyword != ''">
+                and (task_no like concat('%', #{keyword}, '%')
+                    or product_name like concat('%', #{keyword}, '%'))
+            </if>
+            <if test="reviewer != null and reviewer != ''">
+                and reviewer = #{reviewer}
+            </if>
+            <if test="reviewStatus != null and reviewStatus != ''">
+                and review_status = #{reviewStatus}
+            </if>
+            <if test="params.beginReviewTime != null and params.beginReviewTime != ''">
+                and date_format(review_time, '%y%m%d') &gt;= date_format(#{params.beginReviewTime}, '%y%m%d')
+            </if>
+            <if test="params.endReviewTime != null and params.endReviewTime != ''">
+                and date_format(review_time, '%y%m%d') &lt;= date_format(#{params.endReviewTime}, '%y%m%d')
+            </if>
+        </where>
+        order by review_time desc, asset_id desc
+    </select>
+
+    <select id="selectAuditAssetAllList" resultMap="AuditAssetRecordResult">
+        <include refid="selectAuditAssetRecordVo"/>
+        where del_flag = '0'
+        order by asset_id asc
+    </select>
+
+    <select id="selectAuditAssetRecordById" parameterType="Long" resultMap="AuditAssetRecordResult">
+        <include refid="selectAuditAssetRecordVo"/>
+        where asset_id = #{assetId} and del_flag = '0'
+    </select>
+
+    <select id="selectAuditAssetAiVersionListByAssetId" parameterType="Long" resultMap="AuditAssetAiVersionResult">
+        select version_id, asset_id, version_no, word_count_text, current_flag, create_time
+        from audit_asset_ai_version
+        where asset_id = #{assetId}
+        order by version_id desc
+    </select>
+
+    <select id="selectAuditAssetAiStepListByVersionId" parameterType="Long" resultMap="AuditAssetAiStepResult">
+        select step_id, version_id, step_no, step_title, step_content, step_time, sort_num
+        from audit_asset_ai_step
+        where version_id = #{versionId}
+        order by sort_num asc, step_id asc
+    </select>
+
+    <select id="selectAuditAssetResubmitRecordListByAssetId" parameterType="Long" resultMap="AuditAssetResubmitRecordResult">
+        select record_id, asset_id, version_no, submitter, submit_time, file_name, file_url, image_urls, sort_num
+        from audit_asset_resubmit_record
+        where asset_id = #{assetId}
+        order by sort_num asc, record_id asc
+    </select>
+
+    <select id="selectAuditAssetReviewerList" resultType="String">
+        select distinct reviewer
+        from audit_asset_record
+        where del_flag = '0' and reviewer is not null and reviewer != ''
+        order by reviewer asc
+    </select>
+
+    <select id="selectAuditAssetRecordListByIds" resultMap="AuditAssetRecordResult">
+        <include refid="selectAuditAssetRecordVo"/>
+        where asset_id in
+        <foreach item="assetId" collection="array" open="(" separator="," close=")">
+            #{assetId}
+        </foreach>
+    </select>
+
+    <update id="updateAuditAssetPermission">
+        update audit_asset_record
+        set permission_owner = #{permissionOwner},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where asset_id = #{assetId}
+    </update>
+
+    <update id="updateAuditAssetReport" parameterType="AuditAssetRecord">
+        update audit_asset_record
+        <set>
+            <if test="currentAiVersion != null and currentAiVersion != ''">current_ai_version = #{currentAiVersion},</if>
+            <if test="aiAnalysisCount != null">ai_analysis_count = #{aiAnalysisCount},</if>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="reviewTime != null">review_time = #{reviewTime},</if>
+            <if test="reportFileName != null and reportFileName != ''">report_file_name = #{reportFileName},</if>
+            <if test="reportFileUrl != null and reportFileUrl != ''">report_file_url = #{reportFileUrl},</if>
+            <if test="aiOpinion != null">ai_opinion = #{aiOpinion},</if>
+            <if test="finalOpinion != null">final_opinion = #{finalOpinion},</if>
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where asset_id = #{assetId}
+    </update>
+
+    <insert id="insertAuditAssetAiVersion" parameterType="AuditAssetAiVersion" useGeneratedKeys="true" keyProperty="versionId">
+        insert into audit_asset_ai_version
+        (asset_id, version_no, word_count_text, current_flag, create_time)
+        values
+        (#{assetId}, #{versionNo}, #{wordCountText}, #{currentFlag}, #{createTime})
+    </insert>
+
+    <update id="updateAuditAssetCurrentVersionFlag">
+        update audit_asset_ai_version
+        set current_flag = #{currentFlag}
+        where asset_id = #{assetId}
+    </update>
+
+    <insert id="insertAuditAssetAiStep" parameterType="AuditAssetAiStep" useGeneratedKeys="true" keyProperty="stepId">
+        insert into audit_asset_ai_step
+        (version_id, step_no, step_title, step_content, step_time, sort_num)
+        values
+        (#{versionId}, #{stepNo}, #{stepTitle}, #{stepContent}, #{stepTime}, #{sortNum})
+    </insert>
+
+    <insert id="insertAuditAssetResubmitRecord" parameterType="AuditAssetResubmitRecord" useGeneratedKeys="true" keyProperty="recordId">
+        insert into audit_asset_resubmit_record
+        (asset_id, version_no, submitter, submit_time, file_name, file_url, image_urls, sort_num)
+        values
+        (#{assetId}, #{versionNo}, #{submitter}, #{submitTime}, #{fileName}, #{fileUrl}, #{imageUrls}, #{sortNum})
+    </insert>
+
+    <delete id="deleteAuditAssetAiStepByAssetIds">
+        delete from audit_asset_ai_step
+        where version_id in (
+            select version_id from audit_asset_ai_version where asset_id in
+            <foreach item="assetId" collection="array" open="(" separator="," close=")">
+                #{assetId}
+            </foreach>
+        )
+    </delete>
+
+    <delete id="deleteAuditAssetAiVersionByAssetIds">
+        delete from audit_asset_ai_version where asset_id in
+        <foreach item="assetId" collection="array" open="(" separator="," close=")">
+            #{assetId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteAuditAssetResubmitRecordByAssetIds">
+        delete from audit_asset_resubmit_record where asset_id in
+        <foreach item="assetId" collection="array" open="(" separator="," close=")">
+            #{assetId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteAuditAssetRecordByIds">
+        delete from audit_asset_record where asset_id in
+        <foreach item="assetId" collection="array" open="(" separator="," close=")">
+            #{assetId}
+        </foreach>
+    </delete>
+</mapper>

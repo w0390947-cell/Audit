@@ -1,0 +1,104 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and editor files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+
+# Local assistant/tooling state
+.codex
+
+# Logs
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+hs_err_pid*
+replay_pid*
+
+# Java / Maven / Gradle build output
+target/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+*.war
+*.ear
+
+# Spring Boot generated files
+*.xml.versionsBackup
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+coverage/
+.nyc_output/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test reports
+tests/**/coverage/
+tests/e2e/reports/
+selenium-debug.log
+
+# Runtime upload/cache directories
+/uploadPath/
+/.runtime/
+/profile/
+/backend/uploadPath/
+/backend/.runtime/
+/backend/profile/
+ruoyi-ui/dist/
+
+# Local environment overrides
+.env.local
+.env.*.local
+*.local
+application-local.yml
+application-local.yaml
+application-*.local.yml
+application-*.local.yaml
+
+# Temporary FastGPT/manual test payloads
+fastgpt-*.json
+fastgpt-test*.json
+
+# Python caches used by helper scripts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Archives and temporary files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+tmp/
+temp/
+.tmp/
+
+# CodeX
+.codex
+
+# Docs
+docs/

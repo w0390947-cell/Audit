@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditLibraryMapper">
+
+    <resultMap id="AuditLibraryFolderResult" type="AuditLibraryFolder">
+        <result property="folderId" column="folder_id"/>
+        <result property="folderName" column="folder_name"/>
+        <result property="intro" column="intro"/>
+        <result property="visibleScope" column="visible_scope"/>
+        <result property="topFlag" column="top_flag"/>
+        <result property="fileCount" column="file_count"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <resultMap id="AuditCommonResourceResult" type="AuditCommonResource">
+        <result property="resourceId" column="resource_id"/>
+        <result property="documentName" column="document_name"/>
+        <result property="folderId" column="folder_id"/>
+        <result property="folderName" column="folder_name"/>
+        <result property="storageStatus" column="storage_status"/>
+        <result property="progressText" column="progress_text"/>
+        <result property="creator" column="creator"/>
+        <result property="latestModifyTime" column="latest_modify_time"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileUrl" column="file_url"/>
+        <result property="currentVersionNo" column="current_version_no"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <resultMap id="AuditCommonResourceVersionResult" type="AuditCommonResourceVersion">
+        <result property="versionId" column="version_id"/>
+        <result property="resourceId" column="resource_id"/>
+        <result property="versionNo" column="version_no"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileUrl" column="file_url"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="creator" column="creator"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="AuditTaskResourceResult" type="AuditTaskResource">
+        <result property="resourceId" column="resource_id"/>
+        <result property="fileNo" column="file_no"/>
+        <result property="fileName" column="file_name"/>
+        <result property="archiveTime" column="archive_time"/>
+        <result property="folderId" column="folder_id"/>
+        <result property="folderName" column="folder_name"/>
+        <result property="collectStatus" column="collect_status"/>
+        <result property="previewFileUrl" column="preview_file_url"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <sql id="folderFileCountSql">
+        (
+            select count(1)
+            from audit_common_resource r
+            where r.folder_id = f.folder_id and r.del_flag = '0'
+        ) as file_count
+    </sql>
+
+    <select id="selectAuditLibraryFolderList" parameterType="AuditLibraryFolder" resultMap="AuditLibraryFolderResult">
+        select f.folder_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
+               f.create_time, f.update_by, f.update_time, f.remark,
+               <include refid="folderFileCountSql"/>
+        from audit_library_folder f
+        <where>
+            f.del_flag = '0'
+            <if test="folderName != null and folderName != ''">
+                and f.folder_name like concat('%', #{folderName}, '%')
+            </if>
+        </where>
+        order by case f.top_flag when '1' then 0 else 1 end asc, f.folder_id asc
+    </select>
+
+    <select id="selectAuditLibraryFolderById" parameterType="Long" resultMap="AuditLibraryFolderResult">
+        select f.folder_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
+               f.create_time, f.update_by, f.update_time, f.remark,
+               <include refid="folderFileCountSql"/>
+        from audit_library_folder f
+        where f.folder_id = #{folderId} and f.del_flag = '0'
+    </select>
+
+    <insert id="insertAuditLibraryFolder" parameterType="AuditLibraryFolder" useGeneratedKeys="true" keyProperty="folderId">
+        insert into audit_library_folder
+        (folder_name, intro, visible_scope, top_flag, del_flag, create_by, create_time, update_by, update_time, remark)
+        values
+        (#{folderName}, #{intro}, #{visibleScope}, #{topFlag}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
+    </insert>
+
+    <update id="updateAuditLibraryFolder" parameterType="AuditLibraryFolder">
+        update audit_library_folder
+        <set>
+            <if test="folderName != null and folderName != ''">folder_name = #{folderName},</if>
+            <if test="intro != null">intro = #{intro},</if>
+            <if test="visibleScope != null and visibleScope != ''">visible_scope = #{visibleScope},</if>
+            <if test="topFlag != null and topFlag != ''">top_flag = #{topFlag},</if>
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where folder_id = #{folderId}
+    </update>
+
+    <delete id="deleteAuditLibraryFolderByIds">
+        delete from audit_library_folder where folder_id in
+        <foreach item="folderId" collection="array" open="(" separator="," close=")">
+            #{folderId}
+        </foreach>
+    </delete>
+
+    <sql id="selectAuditCommonResourceVo">
+        select resource_id, document_name, folder_id, folder_name, storage_status, progress_text, creator,
+               latest_modify_time, file_size, file_name, file_url, current_version_no, del_flag,
+               create_by, create_time, update_by, update_time, remark
+        from audit_common_resource
+    </sql>
+
+    <select id="selectAuditCommonResourceList" parameterType="AuditCommonResource" resultMap="AuditCommonResourceResult">
+        <include refid="selectAuditCommonResourceVo"/>
+        <where>
+            del_flag = '0'
+            <if test="keyword != null and keyword != ''">
+                and (document_name like concat('%', #{keyword}, '%')
+                    or file_name like concat('%', #{keyword}, '%'))
+            </if>
+            <if test="storageStatus != null and storageStatus != ''">
+                and storage_status = #{storageStatus}
+            </if>
+            <if test="params.beginLatestModifyTime != null and params.beginLatestModifyTime != ''">
+                and date_format(latest_modify_time, '%y%m%d') &gt;= date_format(#{params.beginLatestModifyTime}, '%y%m%d')
+            </if>
+            <if test="params.endLatestModifyTime != null and params.endLatestModifyTime != ''">
+                and date_format(latest_modify_time, '%y%m%d') &lt;= date_format(#{params.endLatestModifyTime}, '%y%m%d')
+            </if>
+        </where>
+        order by latest_modify_time desc, resource_id asc
+    </select>
+
+    <select id="selectAuditCommonResourceById" parameterType="Long" resultMap="AuditCommonResourceResult">
+        <include refid="selectAuditCommonResourceVo"/>
+        where resource_id = #{resourceId} and del_flag = '0'
+    </select>
+
+    <select id="selectAuditCommonResourceVersionListByResourceId" parameterType="Long" resultMap="AuditCommonResourceVersionResult">
+        select version_id, resource_id, version_no, file_name, file_url, file_size, creator, create_time
+        from audit_common_resource_version
+        where resource_id = #{resourceId}
+        order by version_id desc
+    </select>
+
+    <insert id="insertAuditCommonResource" parameterType="AuditCommonResource" useGeneratedKeys="true" keyProperty="resourceId">
+        insert into audit_common_resource
+        (document_name, folder_id, folder_name, storage_status, progress_text, creator, latest_modify_time, file_size,
+         file_name, file_url, current_version_no, del_flag, create_by, create_time, update_by, update_time, remark)
+        values
+        (#{documentName}, #{folderId}, #{folderName}, #{storageStatus}, #{progressText}, #{creator}, #{latestModifyTime},
+         #{fileSize}, #{fileName}, #{fileUrl}, #{currentVersionNo}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
+    </insert>
+
+    <update id="updateAuditCommonResource" parameterType="AuditCommonResource">
+        update audit_common_resource
+        <set>
+            <if test="documentName != null and documentName != ''">document_name = #{documentName},</if>
+            <if test="folderId != null">folder_id = #{folderId},</if>
+            <if test="folderName != null">folder_name = #{folderName},</if>
+            <if test="storageStatus != null and storageStatus != ''">storage_status = #{storageStatus},</if>
+            <if test="progressText != null">progress_text = #{progressText},</if>
+            <if test="creator != null and creator != ''">creator = #{creator},</if>
+            <if test="latestModifyTime != null">latest_modify_time = #{latestModifyTime},</if>
+            <if test="fileSize != null and fileSize != ''">file_size = #{fileSize},</if>
+            <if test="fileName != null and fileName != ''">file_name = #{fileName},</if>
+            <if test="fileUrl != null and fileUrl != ''">file_url = #{fileUrl},</if>
+            <if test="currentVersionNo != null and currentVersionNo != ''">current_version_no = #{currentVersionNo},</if>
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where resource_id = #{resourceId}
+    </update>
+
+    <insert id="insertAuditCommonResourceVersion" parameterType="AuditCommonResourceVersion" useGeneratedKeys="true" keyProperty="versionId">
+        insert into audit_common_resource_version
+        (resource_id, version_no, file_name, file_url, file_size, creator, create_time)
+        values
+        (#{resourceId}, #{versionNo}, #{fileName}, #{fileUrl}, #{fileSize}, #{creator}, #{createTime})
+    </insert>
+
+    <update id="updateAuditCommonResourceFolder" parameterType="AuditCommonResource">
+        update audit_common_resource
+        set folder_id = #{folderId},
+            folder_name = #{folderName},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where resource_id = #{resourceId}
+    </update>
+
+    <delete id="deleteAuditCommonResourceVersionByResourceIds">
+        delete from audit_common_resource_version where resource_id in
+        <foreach item="resourceId" collection="array" open="(" separator="," close=")">
+            #{resourceId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteAuditCommonResourceByIds">
+        delete from audit_common_resource where resource_id in
+        <foreach item="resourceId" collection="array" open="(" separator="," close=")">
+            #{resourceId}
+        </foreach>
+    </delete>
+
+    <sql id="selectAuditTaskResourceVo">
+        select resource_id, file_no, file_name, archive_time, folder_id, folder_name, collect_status,
+               preview_file_url, del_flag, create_by, create_time, update_by, update_time, remark
+        from audit_task_resource
+    </sql>
+
+    <select id="selectAuditTaskResourceList" parameterType="AuditTaskResource" resultMap="AuditTaskResourceResult">
+        <include refid="selectAuditTaskResourceVo"/>
+        <where>
+            del_flag = '0'
+            <if test="keyword != null and keyword != ''">
+                and (file_no like concat('%', #{keyword}, '%')
+                    or file_name like concat('%', #{keyword}, '%'))
+            </if>
+            <if test="folderId != null">
+                and folder_id = #{folderId}
+            </if>
+            <if test="collectStatus != null and collectStatus != ''">
+                and collect_status = #{collectStatus}
+            </if>
+            <if test="params.beginArchiveTime != null and params.beginArchiveTime != ''">
+                and date_format(archive_time, '%y%m%d') &gt;= date_format(#{params.beginArchiveTime}, '%y%m%d')
+            </if>
+            <if test="params.endArchiveTime != null and params.endArchiveTime != ''">
+                and date_format(archive_time, '%y%m%d') &lt;= date_format(#{params.endArchiveTime}, '%y%m%d')
+            </if>
+        </where>
+        order by archive_time desc, resource_id asc
+    </select>
+
+    <update id="updateAuditTaskResource" parameterType="AuditTaskResource">
+        update audit_task_resource
+        <set>
+            <if test="fileNo != null and fileNo != ''">file_no = #{fileNo},</if>
+            <if test="fileName != null and fileName != ''">file_name = #{fileName},</if>
+            <if test="archiveTime != null">archive_time = #{archiveTime},</if>
+            <if test="folderId != null">folder_id = #{folderId},</if>
+            <if test="folderName != null">folder_name = #{folderName},</if>
+            <if test="collectStatus != null and collectStatus != ''">collect_status = #{collectStatus},</if>
+            <if test="previewFileUrl != null and previewFileUrl != ''">preview_file_url = #{previewFileUrl},</if>
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where resource_id = #{resourceId}
+    </update>
+
+    <delete id="deleteAuditTaskResourceByIds">
+        delete from audit_task_resource where resource_id in
+        <foreach item="resourceId" collection="array" open="(" separator="," close=")">
+            #{resourceId}
+        </foreach>
+    </delete>
+</mapper>

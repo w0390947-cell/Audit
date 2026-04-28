@@ -1,0 +1,363 @@
+package com.ruoyi.system.service.audit.impl;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.system.config.FastGptProperties;
+import com.ruoyi.system.domain.audit.AuditAiStats;
+import com.ruoyi.system.domain.audit.AuditAiTask;
+import com.ruoyi.system.mapper.audit.AuditAiMapper;
+import com.ruoyi.system.service.audit.AuditAiAnalysisService;
+import com.ruoyi.system.service.audit.IAuditAiService;
+
+@Service
+public class AuditAiServiceImpl implements IAuditAiService
+{
+    private static final Logger log = LoggerFactory.getLogger(AuditAiServiceImpl.class);
+
+    @Autowired
+    private AuditAiMapper auditAiMapper;
+
+    @Autowired
+    private FastGptProperties fastGptProperties;
+
+    @Autowired
+    private AuditAiAnalysisService auditAiAnalysisService;
+
+    @Override
+    public List<AuditAiTask> selectAuditAiTaskList(AuditAiTask task)
+    {
+        return auditAiMapper.selectAuditAiTaskList(task);
+    }
+
+    @Override
+    public AuditAiTask selectAuditAiTaskDetail(Long aiTaskId)
+    {
+        AuditAiTask task = auditAiMapper.selectAuditAiTaskById(aiTaskId);
+        if (task != null)
+        {
+            task.setFindingList(auditAiMapper.selectAuditAiFindingListByTaskId(aiTaskId));
+        }
+        return task;
+    }
+
+    @Override
+    public AuditAiStats selectAuditAiStats()
+    {
+        List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
+        AuditAiStats stats = new AuditAiStats();
+        stats.setQueueGroupCount(3);
+        stats.setTotalTaskCount(list.size());
+        stats.setCurrentQueueTaskCount(list.size());
+        stats.setWaitingCount((int) list.stream().filter(item -> "waiting".equals(item.getTaskStatus())).count());
+        stats.setExecutingCount((int) list.stream().filter(item -> "executing".equals(item.getTaskStatus())).count());
+        stats.setPausedCount((int) list.stream().filter(item -> "paused".equals(item.getTaskStatus())).count());
+        stats.setHighCount((int) list.stream().filter(item -> "high".equals(item.getPriority())).count());
+        stats.setMediumCount((int) list.stream().filter(item -> "medium".equals(item.getPriority())).count());
+        stats.setLowCount((int) list.stream().filter(item -> "low".equals(item.getPriority())).count());
+
+        double avg = list.stream()
+                .map(AuditAiTask::getProgressPercent)
+                .filter(Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .average()
+                .orElse(0D);
+        stats.setCompletionRate(BigDecimal.valueOf(avg).setScale(1, RoundingMode.HALF_UP).doubleValue());
+        return stats;
+    }
+
+    @Override
+    public List<String> selectSubmitterList()
+    {
+        return auditAiMapper.selectAuditAiSubmitterList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateTaskStatus(Long[] aiTaskIds, String taskStatus, String updateBy)
+    {
+        if (aiTaskIds == null || aiTaskIds.length == 0 || StringUtils.isBlank(taskStatus))
+        {
+            return 0;
+        }
+        int rows = 0;
+        String progressText = buildProgressText(taskStatus);
+        for (Long aiTaskId : aiTaskIds)
+        {
+            rows += auditAiMapper.updateAuditAiTaskStatus(aiTaskId, taskStatus, progressText, updateBy);
+        }
+        resortQueuePositions(updateBy);
+        return rows;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int raisePriority(Long[] aiTaskIds, String updateBy)
+    {
+        if (aiTaskIds == null || aiTaskIds.length == 0)
+        {
+            return 0;
+        }
+        List<AuditAiTask> changedList = auditAiMapper.selectAuditAiTaskListByIds(aiTaskIds);
+        List<AuditAiTask> allList = auditAiMapper.selectAuditAiAllList();
+        if (changedList.isEmpty() || allList.isEmpty())
+        {
+            return 0;
+        }
+        for (AuditAiTask task : allList)
+        {
+            for (AuditAiTask changed : changedList)
+            {
+                if (task.getAiTaskId().equals(changed.getAiTaskId()))
+                {
+                    task.setPriority(bumpPriority(task.getPriority()));
+                    break;
+                }
+            }
+        }
+        return persistQueueOrder(allList, updateBy);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateReviewDecision(AuditAiTask task)
+    {
+        if (task == null || task.getAiTaskId() == null)
+        {
+            return 0;
+        }
+        task.setReviewer(task.getUpdateBy());
+        if ("approved".equals(task.getReviewStatus()))
+        {
+            task.setTaskStatus("completed");
+            task.setProgressPercent(100);
+            task.setProgressText("人工审核已完成");
+        }
+        else
+        {
+            task.setTaskStatus("waiting");
+            task.setProgressPercent(35);
+            task.setProgressText("待修改后重新提交");
+        }
+        int rows = auditAiMapper.updateAuditAiReviewDecision(task);
+        resortQueuePositions(task.getUpdateBy());
+        return rows;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteAuditAiTaskByIds(Long[] aiTaskIds)
+    {
+        if (aiTaskIds == null || aiTaskIds.length == 0)
+        {
+            return 0;
+        }
+        auditAiMapper.deleteAuditAiFindingByTaskIds(aiTaskIds);
+        int rows = auditAiMapper.deleteAuditAiTaskByIds(aiTaskIds);
+        resortQueuePositions("admin");
+        return rows;
+    }
+
+    private void resortQueuePositions(String updateBy)
+    {
+        List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
+        if (!list.isEmpty())
+        {
+            persistQueueOrder(list, updateBy);
+        }
+    }
+
+    private int persistQueueOrder(List<AuditAiTask> list, String updateBy)
+    {
+        List<AuditAiTask> sortedList = list.stream()
+                .sorted(Comparator.comparingInt((AuditAiTask item) -> statusRank(item.getTaskStatus()))
+                        .thenComparingInt(item -> priorityRank(item.getPriority()))
+                        .thenComparing(item -> item.getQueuePosition() == null ? Integer.MAX_VALUE : item.getQueuePosition())
+                        .thenComparing(AuditAiTask::getAiTaskId))
+                .collect(Collectors.toList());
+
+        int rows = 0;
+        int queuePosition = 1;
+        for (AuditAiTask task : sortedList)
+        {
+            if ("completed".equals(task.getTaskStatus()))
+            {
+                task.setQueuePosition(0);
+            }
+            else
+            {
+                task.setQueuePosition(queuePosition++);
+            }
+            rows += auditAiMapper.updateAuditAiTaskQueue(task.getAiTaskId(), task.getPriority(), task.getQueuePosition(),
+                    task.getTaskStatus(), updateBy);
+        }
+        return rows;
+    }
+
+    private int priorityRank(String priority)
+    {
+        if ("high".equals(priority))
+        {
+            return 1;
+        }
+        if ("medium".equals(priority))
+        {
+            return 2;
+        }
+        return 3;
+    }
+
+    private int statusRank(String taskStatus)
+    {
+        if ("executing".equals(taskStatus))
+        {
+            return 1;
+        }
+        if ("waiting".equals(taskStatus))
+        {
+            return 2;
+        }
+        if ("paused".equals(taskStatus))
+        {
+            return 3;
+        }
+        return 4;
+    }
+
+    private String bumpPriority(String priority)
+    {
+        if ("low".equals(priority))
+        {
+            return "medium";
+        }
+        if ("medium".equals(priority))
+        {
+            return "high";
+        }
+        return "high";
+    }
+
+    private String buildProgressText(String taskStatus)
+    {
+        if ("paused".equals(taskStatus))
+        {
+            return "任务已暂停，等待恢复";
+        }
+        if ("waiting".equals(taskStatus))
+        {
+            return "智能体等待处理";
+        }
+        if ("executing".equals(taskStatus))
+        {
+            return "文本解析智能体处理中";
+        }
+        return "人工审核已完成";
+    }
+
+    @Override
+    public int runWaitingAiAnalysis(String operator)
+    {
+        // 1. 检查功能开关
+        if (!fastGptProperties.isEnabled())
+        {
+            log.debug("FastGPT is disabled, skip waiting tasks analysis");
+            return 0;
+        }
+
+        // 2. 查询当前 executing 数量
+        int runningCount = auditAiMapper.countRunningAiTask();
+        log.debug("Current running tasks: {}", runningCount);
+
+        // 3. 计算剩余可执行数量
+        int maxRunningTasks = fastGptProperties.getMaxRunningTasks();
+        int remaining = maxRunningTasks - runningCount;
+
+        if (remaining <= 0)
+        {
+            log.info("Max running tasks reached ({}/{}), skip new tasks", runningCount, maxRunningTasks);
+            return 0;
+        }
+
+        // 4. 查询可执行任务
+        List<AuditAiTask> runnableTasks = auditAiMapper.selectRunnableAiTaskList(remaining);
+        if (runnableTasks == null || runnableTasks.isEmpty())
+        {
+            log.debug("No waiting tasks found");
+            return 0;
+        }
+
+        log.info("Found {} waiting tasks to execute", runnableTasks.size());
+
+        // 5. 逐个同步执行分析，统一由 Quartz 控制批量和频率
+        int successCount = 0;
+        for (AuditAiTask task : runnableTasks)
+        {
+            try
+            {
+                if (StringUtils.isEmpty(task.getReportFileUrl()))
+                {
+                    log.warn("Task report URL is empty, mark as failed, aiTaskId={}", task.getAiTaskId());
+                    auditAiMapper.updateAuditAiAnalysisFailure(task.getAiTaskId(), "报告文件URL为空", operator);
+                    continue;
+                }
+                auditAiAnalysisService.analyzeAndSave(task.getAiTaskId(), operator);
+                successCount++;
+            }
+            catch (Exception e)
+            {
+                log.error("Failed to analyze task {}, skip and continue", task.getAiTaskId(), e);
+            }
+        }
+
+        log.info("Batch analysis completed, succeeded {}/{} tasks", successCount, runnableTasks.size());
+        return successCount;
+    }
+
+    @Override
+    public int triggerAiAnalysis(Long aiTaskId, String operator)
+    {
+        log.info("Manual requeue AI analysis, aiTaskId={}, operator={}", aiTaskId, operator);
+
+        // 1. 查询任务
+        AuditAiTask task = auditAiMapper.selectAuditAiTaskById(aiTaskId);
+        if (task == null)
+        {
+            log.warn("Task not found, aiTaskId={}", aiTaskId);
+            return 0;
+        }
+
+        // 2. 检查报告 URL
+        if (StringUtils.isEmpty(task.getReportFileUrl()))
+        {
+            log.warn("Task report URL is empty, mark as failed, aiTaskId={}", aiTaskId);
+            auditAiMapper.updateAuditAiAnalysisFailure(aiTaskId, "报告文件URL为空", operator);
+            return 0;
+        }
+
+        // 3. 正在执行中的任务不允许重复提交
+        if ("executing".equals(task.getTaskStatus()))
+        {
+            log.warn("Task is already executing, reject requeue, aiTaskId={}", aiTaskId);
+            return 0;
+        }
+
+        // 4. 只重新提交到等待队列，由 Quartz 下一轮统一领取执行
+        int rows = auditAiMapper.requeueAuditAiTask(aiTaskId, 0, "智能体等待处理", operator);
+        if (rows == 0)
+        {
+            log.warn("Failed to requeue task (already executing or deleted), aiTaskId={}", aiTaskId);
+            return 0;
+        }
+
+        return 1;
+    }
+}

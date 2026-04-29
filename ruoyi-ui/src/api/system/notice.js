@@ -43,7 +43,7 @@ export function delNotice(noticeId) {
   })
 }
 
-// 首页顶部公告列表（带已读状态）
+// 顶部公告列表（带已读状态）
 export function listNoticeTop() {
   return request({
     url: '/system/notice/listTop',

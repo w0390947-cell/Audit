@@ -34,8 +34,9 @@ const permission = {
       return new Promise(resolve => {
         // 向后端请求路由数据
         getRouters().then(res => {
-          const sdata = JSON.parse(JSON.stringify(res.data))
-          const rdata = JSON.parse(JSON.stringify(res.data))
+          const routeData = filterRemovedRoutes(JSON.parse(JSON.stringify(res.data || [])))
+          const sdata = JSON.parse(JSON.stringify(routeData))
+          const rdata = JSON.parse(JSON.stringify(routeData))
           const sidebarRoutes = filterAsyncRouter(sdata)
           const rewriteRoutes = filterAsyncRouter(rdata, false, true)
           const asyncRoutes = filterDynamicRoutes(dynamicRoutes)
@@ -50,6 +51,20 @@ const permission = {
       })
     }
   }
+}
+
+function filterRemovedRoutes(routes) {
+  return routes.filter(route => {
+    const title = route.meta && route.meta.title
+    const path = route.path || ''
+    if (title === '若依官网' || path === 'http://ruoyi.vip' || path === 'https://ruoyi.vip') {
+      return false
+    }
+    if (route.children && route.children.length) {
+      route.children = filterRemovedRoutes(route.children)
+    }
+    return true
+  })
 }
 
 // 遍历后台传来的路由字符串，转换为组件对象

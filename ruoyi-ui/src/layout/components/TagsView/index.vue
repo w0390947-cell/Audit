@@ -142,7 +142,7 @@ export default {
     isFirstView() {
       try {
         const tag = this.selectedTag && this.selectedTag.fullPath ? this.selectedTag : this.selectedDropdownTag
-        return tag.fullPath === '/index' || tag.fullPath === this.visitedViews[1].fullPath
+        return this.visitedViews.length > 0 && tag.fullPath === this.visitedViews[0].fullPath
       } catch (err) {
         return false
       }

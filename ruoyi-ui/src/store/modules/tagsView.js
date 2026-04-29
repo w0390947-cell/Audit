@@ -14,7 +14,7 @@ function saveVisitedViews(views) {
 }
 
 function loadVisitedViews() {
-  return cache.local.getJSON(PERSIST_KEY) || []
+  return (cache.local.getJSON(PERSIST_KEY) || []).filter(view => view.path !== '/index' && view.fullPath !== '/index')
 }
 
 function clearVisitedViews() {

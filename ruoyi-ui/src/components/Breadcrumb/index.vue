@@ -45,10 +45,6 @@ export default {
       } else {
         matched = router.matched.filter(item => item.meta && item.meta.title)
       }
-      // 判断是否为首页
-      if (!this.isDashboard(matched[0])) {
-        matched = [{ path: "/index", meta: { title: "首页" } }].concat(matched)
-      }
       this.levelList = matched.filter(item => item.meta && item.meta.title && item.meta.breadcrumb !== false)
     },
     findPathNum(str, char = "/") {
@@ -69,13 +65,6 @@ export default {
           this.getMatched(pathList, data.children, matched)
         }
       }
-    },
-    isDashboard(route) {
-      const name = route && route.name
-      if (!name) {
-        return false
-      }
-      return name.trim() === 'Index'
     },
     handleLink(item) {
       const { redirect, path } = item

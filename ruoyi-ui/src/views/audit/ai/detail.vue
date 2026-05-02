@@ -11,50 +11,23 @@
       <div class="preview-column">
         <div class="section-card">
           <div class="section-title">报告预览</div>
-          <div class="report-shell">
-            <div class="report-paper">
-              <div class="report-title">煤科院煤炭产品质量检测报告</div>
-              <div class="report-meta">报告编号：{{ detail.taskNo || 'MKY-JC-20260129001' }}</div>
-              <div class="report-meta">检测单位：XX 煤炭科学研究院有限公司 检测中心</div>
-              <div class="report-meta">委托单位：{{ detail.deliveryUnit || 'XX 煤炭开采有限公司' }}</div>
-
-              <div class="report-tip blue-tip">内容缺失：委托单位联系人及联系方式未填写</div>
-
-              <div class="report-heading">一、检测概况</div>
-              <p class="report-text">1.1 检测目的：受委托单位委托，对其送检的商品煤样品进行工业分析、全硫、发热量等指标检测，验证样品质量是否符合 GB/T 5751-2014 及委托方约定标准。</p>
-              <p class="report-text">1.2 检测样品：送检样品为烟煤，样品数量 2kg，样品编号 YM-20260129001，采集日期 2026 年 01 月 27 日，送检日期 2026 年 01 月 28 日。</p>
-
-              <div class="report-tip blue-tip">内容缺失：样品采集地点、采样方式未填写</div>
-
-              <p class="report-text">1.3 检测依据：GB/T 212-2008《煤的工业分析方法》、GB/T 213-2021《煤的发热量测定方法》、GB/T 214-2007《煤中全硫的测定方法》。</p>
-              <p class="report-text">1.4 检测仪器：电子天平（精度 0.1mg）、马弗炉、量热仪、定硫仪，所有仪器均在检定有效期内，检定证书编号详见附件。</p>
-
-              <div class="report-heading">二、检测项目及结果</div>
-              <div class="report-tip yellow-tip">格式错误：检测项目及结果未按规范设置表格标题，表格缺少“检测结果判定”</div>
-
-              <table class="report-table">
-                <thead>
-                  <tr>
-                    <th>检测项目</th>
-                    <th>单位</th>
-                    <th>检测结果</th>
-                    <th>标准要求（委托方约定+国标）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>水分（Mad）</td>
-                    <td>%</td>
-                    <td>8.7</td>
-                    <td>≤8.0</td>
-                  </tr>
-                </tbody>
-              </table>
+          <div class="report-shell" v-loading="previewLoading">
+            <object
+              v-if="previewReady"
+              :data="previewViewerSrc"
+              type="application/pdf"
+              class="preview-frame"
+            >
+              <iframe :src="previewViewerSrc" class="preview-frame" frameborder="0" />
+            </object>
+            <div v-else class="preview-empty">
+              <i class="el-icon-document" />
+              <span>{{ previewEmptyText }}</span>
             </div>
           </div>
           <div class="preview-actions">
-            <el-button type="primary" size="small" @click="changePage(-1)" :disabled="currentPage <= 1">上一页</el-button>
-            <el-button type="primary" size="small" @click="changePage(1)">下一页</el-button>
+            <el-button type="primary" size="small" icon="el-icon-refresh" @click="getPreview" :loading="previewLoading">刷新预览</el-button>
+            <el-button size="small" icon="el-icon-download" @click="downloadReport">下载原文件</el-button>
           </div>
         </div>
       </div>
@@ -132,7 +105,7 @@
 </template>
 
 <script>
-import { getAiTask, reviewAiTask } from '@/api/audit/ai'
+import { getAiReportPreview, getAiTask, reviewAiTask } from '@/api/audit/ai'
 
 export default {
   name: 'AuditAiDetail',
@@ -140,7 +113,9 @@ export default {
   data() {
     return {
       loading: true,
-      currentPage: 1,
+      previewLoading: false,
+      previewInfo: null,
+      previewError: '',
       detail: {
         findingList: []
       },
@@ -156,6 +131,27 @@ export default {
     },
     reportTimeText() {
       return this.parseTime(this.detail.submitTime, '{y}-{m}-{d}-{h}:{i}') || '2025-06-17-12:28'
+    },
+    previewReady() {
+      return !!(this.previewInfo && this.previewInfo.previewFileUrl)
+    },
+    previewViewerSrc() {
+      if (!this.previewReady) {
+        return ''
+      }
+      return this.toAbsoluteUrl(this.previewInfo.previewFileUrl)
+    },
+    previewEmptyText() {
+      if (this.previewLoading) {
+        return '正在生成报告预览...'
+      }
+      if (this.previewError) {
+        return this.previewError
+      }
+      if (!this.detail.reportFileUrl) {
+        return '当前任务未绑定报告文件'
+      }
+      return '暂无可预览报告'
     },
     findingRows() {
       if (Array.isArray(this.detail.findingList) && this.detail.findingList.length) {
@@ -191,11 +187,13 @@ export default {
     },
     getDetail() {
       this.loading = true
-      this.currentPage = 1
+      this.previewInfo = null
+      this.previewError = ''
       getAiTask(this.currentAiTaskId).then(response => {
         this.detail = response.data || { findingList: [] }
         this.reviewForm.reviewOpinion = this.detail.reviewOpinion || ''
         this.loading = false
+        this.getPreview()
       }).catch(() => {
         this.loading = false
       })
@@ -203,12 +201,22 @@ export default {
     goBack() {
       this.$router.push('/audit-ai/queue')
     },
-    changePage(step) {
-      const nextPage = this.currentPage + step
-      if (nextPage < 1) {
+    getPreview() {
+      if (!this.currentAiTaskId || !this.detail.reportFileUrl) {
+        this.previewInfo = null
+        this.previewError = ''
         return
       }
-      this.currentPage = nextPage
+      this.previewLoading = true
+      this.previewError = ''
+      getAiReportPreview(this.currentAiTaskId).then(response => {
+        this.previewInfo = response.data || null
+        this.previewLoading = false
+      }).catch(error => {
+        this.previewInfo = null
+        this.previewError = error && error.message ? error.message : '报告预览生成失败'
+        this.previewLoading = false
+      })
     },
     downloadReport() {
       if (!this.detail.reportFileUrl) {
@@ -216,6 +224,16 @@ export default {
         return
       }
       window.open(encodeURI(this.detail.reportFileUrl))
+    },
+    toAbsoluteUrl(url) {
+      if (!url) {
+        return ''
+      }
+      try {
+        return new URL(url, window.location.origin).href
+      } catch (e) {
+        return url
+      }
     },
     submitDecision(reviewStatus) {
       const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId
@@ -303,92 +321,44 @@ export default {
 }
 
 .report-shell {
-  padding: 8px 0 0;
+  height: calc(100vh - 230px);
+  min-height: 680px;
+  background: #f8fafc;
+  border: 1px solid #ebeef5;
 }
 
-.report-paper {
-  width: 72%;
-  min-width: 420px;
-  margin: 0 auto;
-  background: #fff;
-  min-height: 860px;
-}
-
-.report-title {
-  color: #1f2d3d;
-  font-size: 18px;
-  font-weight: 700;
-  text-align: center;
-  margin: 54px 0 30px;
-}
-
-.report-meta {
-  color: #444;
-  font-size: 12px;
-  line-height: 2.1;
-}
-
-.report-heading {
-  color: #303133;
-  font-size: 16px;
-  font-weight: 700;
-  margin: 16px 0 8px;
-  text-align: center;
-}
-
-.report-text {
-  color: #4c5564;
-  font-size: 12px;
-  line-height: 2.1;
-  margin: 0;
-}
-
-.report-tip {
-  margin: 12px 0;
-  padding: 9px 12px;
-  border-radius: 2px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.blue-tip {
-  color: #67758a;
-  background: #dfeaf8;
-  border: 1px solid #d5e3f6;
-}
-
-.yellow-tip {
-  color: #b8a54b;
-  background: #fff7cf;
-  border: 1px solid #faefad;
-}
-
-.report-table {
+.preview-frame {
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
+  height: 100%;
+  display: block;
+  border: 0;
+}
 
-  th,
-  td {
-    border: 1px solid #e8edf3;
-    text-align: center;
-    color: #4c5564;
-    font-size: 12px;
-    padding: 8px 6px;
-  }
+.preview-empty {
+  height: 100%;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #909399;
+  font-size: 14px;
+  text-align: center;
+  padding: 24px;
+}
 
-  th {
-    background: #fafbfd;
-    color: #384150;
-    font-weight: 600;
-  }
+.preview-empty i {
+  font-size: 42px;
+  color: #c0c4cc;
 }
 
 .preview-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 10px;
   margin-top: 18px;
-  padding: 0 46px 10px;
+  padding-bottom: 10px;
 }
 
 .info-table {
@@ -501,9 +471,9 @@ export default {
     min-width: 0;
   }
 
-  .report-paper {
-    width: 100%;
-    min-width: 0;
+  .report-shell {
+    height: 72vh;
+    min-height: 520px;
   }
 }
 </style>

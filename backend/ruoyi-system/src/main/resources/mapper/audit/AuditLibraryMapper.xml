@@ -143,6 +143,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="storageStatus != null and storageStatus != ''">
                 and storage_status = #{storageStatus}
             </if>
+            <if test="folderId != null">
+                and folder_id = #{folderId}
+            </if>
             <if test="params.beginLatestModifyTime != null and params.beginLatestModifyTime != ''">
                 and date_format(latest_modify_time, '%y%m%d') &gt;= date_format(#{params.beginLatestModifyTime}, '%y%m%d')
             </if>

@@ -22,6 +22,7 @@ import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.common.utils.poi.ExcelUtil;
 import com.ruoyi.system.domain.audit.AuditAiStats;
 import com.ruoyi.system.domain.audit.AuditAiTask;
+import com.ruoyi.system.service.audit.AuditAiReportPreviewService;
 import com.ruoyi.system.service.audit.IAuditAiService;
 
 @RestController
@@ -30,6 +31,9 @@ public class AuditAiController extends BaseController
 {
     @Autowired
     private IAuditAiService auditAiService;
+
+    @Autowired
+    private AuditAiReportPreviewService auditAiReportPreviewService;
 
     @PreAuthorize("@ss.hasPermi('audit:ai:list')")
     @GetMapping("/list")
@@ -60,6 +64,13 @@ public class AuditAiController extends BaseController
     public AjaxResult getInfo(@PathVariable Long aiTaskId)
     {
         return success(auditAiService.selectAuditAiTaskDetail(aiTaskId));
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:ai:detail')")
+    @GetMapping("/{aiTaskId}/reportPreview")
+    public AjaxResult reportPreview(@PathVariable Long aiTaskId)
+    {
+        return success(auditAiReportPreviewService.getReportPreview(aiTaskId));
     }
 
     @PreAuthorize("@ss.hasPermi('audit:ai:export')")

@@ -33,6 +33,14 @@ export function getAiTask(aiTaskId) {
   })
 }
 
+// 查询 AI 任务报告预览文件
+export function getAiReportPreview(aiTaskId) {
+  return request({
+    url: '/audit/ai/' + aiTaskId + '/reportPreview',
+    method: 'get'
+  })
+}
+
 // 批量切换 AI 任务状态
 export function changeAiTaskStatus(data) {
   return request({

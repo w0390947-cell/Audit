@@ -149,12 +149,11 @@ WHERE NOT EXISTS (
 -- ============================================================
 
 -- AI 报告分析定时任务
--- 注意：初始 status='1' 表示暂停，部署后确认配置无误再手动启用
+-- 注意：初始 status='0' 表示正常，初始化后自动启用定时分析任务
 INSERT INTO `sys_job`
 (`job_id`, `job_name`, `job_group`, `invoke_target`, `cron_expression`, `misfire_policy`,
  `concurrent`, `status`, `create_by`, `create_time`, `remark`)
 VALUES
 (20, 'AI报告分析任务', 'DEFAULT', 'auditAiAnalysisTask.run()', '0 */1 * * * ?',
- '3', '1', '1', 'admin', NOW(), '扫描等待中的AI审核任务并调用FastGPT分析')
+ '3', '1', '0', 'admin', NOW(), '扫描等待中的AI审核任务并调用FastGPT分析')
 ON DUPLICATE KEY UPDATE job_name = VALUES(job_name), invoke_target = VALUES(invoke_target);
-

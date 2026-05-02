@@ -71,7 +71,7 @@ spring:
       # 地址
       host: 127.0.0.1
       # 端口，默认为6379
-      port: 16379
+      port: 6379
       # 数据库索引
       database: 0
       # 密码
@@ -148,15 +148,15 @@ fastgpt:
   # FastGPT 总开关
   enabled: true
   # FastGPT OpenAPI 根地址
-  base-url: http://192.168.1.25:3000/api
+  base-url: http://1.14.131.18:3000/api
   # FastGPT 应用特定 API Key（通过环境变量注入）
-  api-key: fastgpt-qOmW3rSdz44J6o3JlzsVAYiwRwrp7kSe3vQ1y5ft4emBInpKsd60ZK
+  api-key: fastgpt-dzvZyTshxxSOitssj4HvyAK5VwOnfDC2UZf3lWxNqImY2H59e65P
   # 带依据文件场景使用的 FastGPT 应用特定 API Key
-  basis-api-key: fastgpt-iEzCUySn7cLaDpffjTy0RUDIiNAFCNAszcHHFJn1LR1kbpA18RzWb5eKPSEiG
+  basis-api-key: fastgpt-njpahN525sdXPHPRChwYayL4iqyUVc20UsxbB6F4GWkDjkoviXzLwENDdVni49
   # 主报告正文预处理工作流使用的 FastGPT 应用特定 API Key
-  preprocess-api-key: fastgpt-nWxtGTEVJJEsQjrsaOqgTbd4M6jldTPLCUo1e6T55TRpNoMubnR0c
+  preprocess-api-key: fastgpt-mUP8jPwkJ7JbTcorJeoYHYy52qxpN9Oh8BuR0wLiPvwtAgYQJF05bY
   # FastGPT 服务可访问的后端文件公开地址，用于将 /profile/... 转为完整 URL
-  public-file-base-url: http://192.168.1.182:6039
+  public-file-base-url: https://5bf3-2409-8a3c-36b1-7510-265a-5fff-fe43-cfe3.ngrok-free.app
   # 连接超时时间（毫秒）
   connect-timeout: 10000
   # 读取超时时间（毫秒）

@@ -198,19 +198,6 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="上传报告子区" prop="appendixFileUrls">
-          <div class="upload-panel">
-            <FileUpload
-              v-model="form.appendixFileUrls"
-              :limit="8"
-              :file-size="20"
-              :is-show-tip="false"
-              :dropzone="true"
-              button-text="上传文件"
-              drop-hint="拖放文件"
-            />
-          </div>
-        </el-form-item>
       </el-form>
       <div slot="footer" class="dialog-footer">
         <el-button @click="cancel">取消</el-button>
@@ -292,12 +279,7 @@ export default {
         priority: [
           { required: true, message: '优先级不能为空', trigger: 'change' }
         ],
-        mainReportUrls: [
-          { required: true, message: '请上传主报告文件', trigger: 'change' }
-        ],
-        appendixFileUrls: [
-          { required: true, message: '请上传报告子区文件', trigger: 'change' }
-        ]
+        mainReportUrls: []
       }
     }
   },

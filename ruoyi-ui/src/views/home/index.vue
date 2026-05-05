@@ -39,23 +39,24 @@
       <div class="ai-queue-head">
         <div>
           <div class="section-title">AI队列概览</div>
-          <div class="ai-queue-subtitle">队列数量 {{ aiStats.queueGroupCount || 0 }} 队</div>
         </div>
         <div class="ai-completion">
+          <div class="ai-completion-meta">
+            <span>平均完成进度</span>
+            <strong>{{ aiStats.completionRate || 0 }}%</strong>
+          </div>
           <el-progress
-            type="circle"
             :percentage="Number(aiStats.completionRate || 0)"
-            :width="92"
             :stroke-width="8"
+            :show-text="false"
           />
-          <span>平均完成进度</span>
         </div>
       </div>
       <div class="ai-queue-body">
         <div class="ai-total-box">
           <span>队列总数</span>
           <strong>{{ aiStats.totalTaskCount || 0 }}</strong>
-          <em>当前队列 {{ aiStats.currentQueueTaskCount || 0 }} 个任务</em>
+          <em>当前队列 {{ aiStats.currentQueueTaskCount || 0 }} 个</em>
         </div>
         <div class="ai-status-list">
           <div class="ai-status-item waiting">
@@ -457,46 +458,63 @@ export default {
 }
 
 .ai-queue-card {
-  padding: 18px;
+  padding: 0;
   margin-bottom: 14px;
+  overflow: hidden;
 }
 
 .ai-queue-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 18px;
+  align-items: center;
+  gap: 24px;
   border-bottom: 1px solid #eef1f5;
-  padding-bottom: 16px;
+  padding: 18px 20px 16px;
 }
 
-.ai-queue-subtitle {
-  color: #8b95a6;
-  font-size: 13px;
+.ai-queue-head .section-title {
+  margin-bottom: 0;
 }
 
 .ai-completion {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 280px);
+  align-items: end;
+  gap: 14px;
   color: #6b7280;
   font-size: 13px;
 }
 
+.ai-completion-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.ai-completion-meta strong {
+  color: #1f2937;
+  font-size: 22px;
+  line-height: 1;
+}
+
 .ai-queue-body {
   display: grid;
-  grid-template-columns: 230px minmax(320px, 1fr) minmax(260px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: 220px minmax(300px, 1fr) minmax(280px, 0.8fr);
+  gap: 14px;
   align-items: stretch;
-  padding-top: 16px;
+  padding: 18px 20px 20px;
 }
 
 .ai-total-box {
-  min-height: 190px;
+  min-height: 170px;
   border: 1px solid #e7ebf1;
-  border-radius: 4px;
-  padding: 18px;
+  border-radius: 6px;
+  padding: 18px 18px 16px;
   background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .ai-total-box span,
@@ -509,23 +527,26 @@ export default {
 
 .ai-total-box strong {
   display: block;
-  margin: 18px 0 16px;
+  margin: 18px 0 14px;
   color: #1f2937;
-  font-size: 42px;
+  font-size: 46px;
   line-height: 1;
 }
 
 .ai-status-list {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 .ai-status-item {
-  min-height: 190px;
+  min-height: 80px;
   border: 1px solid #e7ebf1;
-  border-radius: 4px;
-  padding: 14px;
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .ai-status-item span {
@@ -536,9 +557,8 @@ export default {
 
 .ai-status-item strong {
   display: block;
-  margin-top: 16px;
   color: #303133;
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1;
 }
 
@@ -559,7 +579,9 @@ export default {
 }
 
 .ai-priority-chart {
-  min-height: 190px;
+  min-height: 170px;
+  border: 1px solid #e7ebf1;
+  border-radius: 6px;
 }
 
 .section-card {
@@ -609,7 +631,15 @@ export default {
   .ai-queue-head,
   .ai-completion {
     align-items: flex-start;
+  }
+
+  .ai-queue-head {
     flex-direction: column;
+  }
+
+  .ai-completion {
+    width: 100%;
+    grid-template-columns: 1fr;
   }
 }
 

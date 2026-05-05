@@ -48,35 +48,26 @@
         <div class="stats-card">
           <div class="stats-title">队伍情况</div>
           <div class="stats-summary">
-            <div>队列数量：{{ stats.queueGroupCount || 0 }}队</div>
             <div>队列总数：{{ stats.totalTaskCount || 0 }}个</div>
           </div>
           <div ref="priorityChart" class="priority-chart" />
-          <div class="queue-selector">
-            <div class="queue-label">队列名称</div>
-            <el-select v-model="queueName" size="small" style="width: 100%">
-              <el-option label="高优先级" value="high" />
-              <el-option label="中优先级" value="medium" />
-              <el-option label="低优先级" value="low" />
-            </el-select>
-          </div>
           <div class="completion-box">
-            <el-progress :percentage="Number(stats.completionRate || 0)" :stroke-width="10" />
+            <el-progress :percentage="Number(stats.completionRate || 0)" :stroke-width="10" :show-text="false" />
             <div class="completion-text">已完成进度：{{ stats.completionRate || 0 }}%</div>
           </div>
           <table class="stat-table">
             <tbody>
               <tr>
                 <th>任务总数</th>
-                <td>当前队列：{{ stats.currentQueueTaskCount || 0 }}个任务</td>
+                <td>{{ stats.currentQueueTaskCount || 0 }}个</td>
               </tr>
               <tr>
                 <th>待执行数</th>
-                <td>等待中：{{ stats.waitingCount || 0 }}个</td>
+                <td>{{ stats.waitingCount || 0 }}个</td>
               </tr>
               <tr>
                 <th>执行中数</th>
-                <td>执行中：{{ stats.executingCount || 0 }}个</td>
+                <td>{{ stats.executingCount || 0 }}个</td>
               </tr>
             </tbody>
           </table>
@@ -217,7 +208,6 @@ export default {
       multiple: true,
       taskList: [],
       submitterOptions: [],
-      queueName: 'high',
       stats: {
         queueGroupCount: 0,
         totalTaskCount: 0,
@@ -475,16 +465,6 @@ export default {
 .priority-chart {
   width: 100%;
   height: 260px;
-}
-
-.queue-selector {
-  margin: 6px 0 14px;
-}
-
-.queue-label {
-  color: #606266;
-  font-size: 13px;
-  margin-bottom: 6px;
 }
 
 .completion-box {

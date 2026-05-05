@@ -247,7 +247,12 @@
                 @click="leaveLibraryFolder"
               >审核文件库</span>
             </el-breadcrumb-item>
-            <el-breadcrumb-item v-if="currentLibraryFolder">{{ currentLibraryFolder.folderName }}</el-breadcrumb-item>
+            <el-breadcrumb-item v-for="(item, index) in libraryFolderPath" :key="item.folderId">
+              <span
+                :class="{ 'breadcrumb-link': index < libraryFolderPath.length - 1 }"
+                @click="navigateLibraryFolder(index)"
+              >{{ item.folderName }}</span>
+            </el-breadcrumb-item>
           </el-breadcrumb>
           <div class="selected-count">已选择 {{ selectedLibraryFileList.length }} 个文件</div>
         </div>
@@ -261,7 +266,7 @@
           />
         </div>
 
-        <div v-if="!currentLibraryFolder && !libraryKeyword" class="picker-folder-grid">
+        <div v-if="!currentLibraryFolder && !libraryKeyword && libraryFolders.length" class="picker-folder-grid picker-child-folder-grid">
           <div
             v-for="item in libraryFolders"
             :key="item.folderId"
@@ -274,12 +279,27 @@
               <span class="folder-body" />
             </div>
             <div class="picker-folder-name">{{ item.folderName }}</div>
-            <div class="picker-folder-count">{{ item.fileCount || 0 }} 个文件</div>
+            <div class="picker-folder-count">{{ item.fileCount || 0 }} 个项目</div>
           </div>
-          <el-empty v-if="!libraryFolders.length && !libraryLoading" description="暂无文件夹" :image-size="100" />
         </div>
 
-        <div v-else>
+        <div>
+          <div v-if="currentLibraryFolder && !libraryKeyword && libraryChildFolders.length" class="picker-folder-grid picker-child-folder-grid">
+            <div
+              v-for="item in libraryChildFolders"
+              :key="item.folderId"
+              class="picker-folder-card"
+              @click="enterLibraryFolder(item)"
+            >
+              <div class="picker-folder-icon">
+                <span class="folder-top" />
+                <span class="folder-line" />
+                <span class="folder-body" />
+              </div>
+              <div class="picker-folder-name">{{ item.folderName }}</div>
+              <div class="picker-folder-count">{{ item.fileCount || 0 }} 个项目</div>
+            </div>
+          </div>
           <el-table
             ref="libraryResourceTable"
             v-loading="resourceLoading"
@@ -290,21 +310,13 @@
             @select-all="handleLibrarySelectAll"
           >
             <el-table-column type="selection" width="55" align="center" :selectable="isLibraryFileSelectable" />
-            <el-table-column label="类型" width="90" align="center">
-              <template slot-scope="scope">
-                <el-tag size="small" :type="scope.row.resourceType === 'common' ? 'success' : 'primary'">
-                  {{ scope.row.resourceType === 'common' ? '常用文件' : '任务文件' }}
-                </el-tag>
-              </template>
-            </el-table-column>
             <el-table-column label="文件名称" prop="displayName" min-width="200" show-overflow-tooltip />
-            <el-table-column label="所属文件夹" prop="folderName" width="140" show-overflow-tooltip>
-              <template slot-scope="scope">{{ scope.row.folderName || '--' }}</template>
-            </el-table-column>
             <el-table-column label="文件大小" prop="fileSize" width="90" align="center">
               <template slot-scope="scope">{{ scope.row.fileSize || '--' }}</template>
             </el-table-column>
-            <el-table-column label="状态" prop="statusText" width="100" align="center" />
+            <el-table-column label="创建者" prop="creatorName" width="100" align="center">
+              <template slot-scope="scope">{{ scope.row.creatorName || '--' }}</template>
+            </el-table-column>
             <el-table-column label="更新时间" width="150" align="center">
               <template slot-scope="scope">{{ parseTime(scope.row.displayTime) || '--' }}</template>
             </el-table-column>
@@ -315,8 +327,8 @@
             </el-table-column>
           </el-table>
           <el-empty
-            v-if="!resourceLoading && !filteredLibraryResources.length"
-            :description="libraryKeyword ? '未找到匹配文件' : '当前文件夹暂无文件'"
+            v-if="!resourceLoading && !filteredLibraryResources.length && (libraryKeyword || (!libraryFolders.length && !libraryChildFolders.length))"
+            :description="libraryKeyword ? '未找到匹配文件' : '当前目录暂无文件'"
             :image-size="100"
           />
         </div>
@@ -364,6 +376,8 @@ export default {
       title: '',
       historyList: [],
       libraryFolders: [],
+      libraryChildFolders: [],
+      libraryFolderPath: [],
       currentLibraryFolder: null,
       libraryResources: [],
       libraryKeyword: '',
@@ -546,14 +560,17 @@ export default {
       this.libraryOpen = true
       this.currentLibraryFolder = null
       this.libraryResources = []
+      this.libraryChildFolders = []
+      this.libraryFolderPath = []
       this.libraryKeyword = ''
       this.libraryGlobalLoaded = false
       this.selectedLibraryFiles = {}
       this.getLibraryFolders()
+      this.getLibraryResources(null, true)
     },
     getLibraryFolders() {
       this.libraryLoading = true
-      listLibraryFolders().then(response => {
+      listLibraryFolders({ parentId: 0 }).then(response => {
         this.libraryFolders = response.data || []
         this.libraryLoading = false
       }).catch(() => {
@@ -563,8 +580,11 @@ export default {
     },
     enterLibraryFolder(folder) {
       this.currentLibraryFolder = folder
+      this.libraryFolderPath = this.libraryFolderPath.concat(folder)
       this.libraryKeyword = ''
       this.libraryGlobalLoaded = false
+      this.libraryChildFolders = []
+      this.getLibraryChildFolders(folder)
       this.getLibraryResources(folder)
     },
     leaveLibraryFolder() {
@@ -573,13 +593,43 @@ export default {
       }
       this.currentLibraryFolder = null
       this.libraryResources = []
+      this.libraryChildFolders = []
+      this.libraryFolderPath = []
       this.libraryKeyword = ''
       this.libraryGlobalLoaded = false
+      this.getLibraryResources(null, true)
     },
-    getLibraryResources(folder) {
+    navigateLibraryFolder(index) {
+      if (index < 0 || index >= this.libraryFolderPath.length - 1) {
+        return
+      }
+      const nextPath = this.libraryFolderPath.slice(0, index + 1)
+      const folder = nextPath[nextPath.length - 1]
+      this.libraryFolderPath = nextPath
+      this.currentLibraryFolder = folder
+      this.libraryKeyword = ''
+      this.libraryGlobalLoaded = false
+      this.libraryChildFolders = []
+      this.getLibraryChildFolders(folder)
+      this.getLibraryResources(folder)
+    },
+    getLibraryChildFolders(folder) {
+      if (!folder || !folder.folderId) {
+        this.libraryChildFolders = []
+        return
+      }
+      listLibraryFolders({ parentId: folder.folderId }).then(response => {
+        this.libraryChildFolders = response.data || []
+      }).catch(() => {
+        this.libraryChildFolders = []
+      })
+    },
+    getLibraryResources(folder, rootOnly) {
       const queryParams = { pageNum: 1, pageSize: 999 }
       if (folder && folder.folderId) {
         queryParams.folderId = folder.folderId
+      } else if (rootOnly) {
+        queryParams.folderId = 0
       }
       this.resourceLoading = true
       Promise.all([
@@ -595,7 +645,7 @@ export default {
           folderName: item.folderName,
           fileUrl: item.fileUrl,
           fileSize: item.fileSize,
-          statusText: this.commonStatusLabel(item.storageStatus),
+          creatorName: item.creator || item.createBy,
           displayTime: item.latestModifyTime || item.updateTime || item.createTime
         }))
         const taskRows = (taskResponse.rows || []).map(item => ({
@@ -607,7 +657,7 @@ export default {
           folderName: item.folderName,
           fileUrl: item.previewFileUrl,
           fileSize: '',
-          statusText: this.taskStatusLabel(item.collectStatus),
+          creatorName: item.creator || item.createBy,
           displayTime: item.archiveTime || item.updateTime || item.createTime
         }))
         this.libraryResources = commonRows.concat(taskRows)
@@ -934,6 +984,10 @@ export default {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 14px;
+}
+
+.picker-child-folder-grid {
+  margin-bottom: 14px;
 }
 
 .picker-folder-card {

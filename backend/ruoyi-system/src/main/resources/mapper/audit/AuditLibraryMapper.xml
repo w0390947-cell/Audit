@@ -6,6 +6,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <resultMap id="AuditLibraryFolderResult" type="AuditLibraryFolder">
         <result property="folderId" column="folder_id"/>
+        <result property="parentId" column="parent_id"/>
         <result property="folderName" column="folder_name"/>
         <result property="intro" column="intro"/>
         <result property="visibleScope" column="visible_scope"/>
@@ -70,14 +71,22 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <sql id="folderFileCountSql">
         (
-            select count(1)
-            from audit_common_resource r
-            where r.folder_id = f.folder_id and r.del_flag = '0'
+            (select count(1)
+             from audit_library_folder child
+             where child.parent_id = f.folder_id and child.del_flag = '0')
+            +
+            (select count(1)
+             from audit_common_resource r
+             where r.folder_id = f.folder_id and r.del_flag = '0')
+            +
+            (select count(1)
+             from audit_task_resource tr
+             where tr.folder_id = f.folder_id and tr.del_flag = '0')
         ) as file_count
     </sql>
 
     <select id="selectAuditLibraryFolderList" parameterType="AuditLibraryFolder" resultMap="AuditLibraryFolderResult">
-        select f.folder_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
+        select f.folder_id, f.parent_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
                f.create_time, f.update_by, f.update_time, f.remark,
                <include refid="folderFileCountSql"/>
         from audit_library_folder f
@@ -86,12 +95,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="folderName != null and folderName != ''">
                 and f.folder_name like concat('%', #{folderName}, '%')
             </if>
+            <if test="parentId != null and parentId == 0">
+                and (f.parent_id is null or f.parent_id = 0)
+            </if>
+            <if test="parentId != null and parentId != 0">
+                and f.parent_id = #{parentId}
+            </if>
         </where>
         order by case f.top_flag when '1' then 0 else 1 end asc, f.folder_id asc
     </select>
 
     <select id="selectAuditLibraryFolderById" parameterType="Long" resultMap="AuditLibraryFolderResult">
-        select f.folder_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
+        select f.folder_id, f.parent_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
                f.create_time, f.update_by, f.update_time, f.remark,
                <include refid="folderFileCountSql"/>
         from audit_library_folder f
@@ -100,15 +115,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertAuditLibraryFolder" parameterType="AuditLibraryFolder" useGeneratedKeys="true" keyProperty="folderId">
         insert into audit_library_folder
-        (folder_name, intro, visible_scope, top_flag, del_flag, create_by, create_time, update_by, update_time, remark)
+        (parent_id, folder_name, intro, visible_scope, top_flag, del_flag, create_by, create_time, update_by, update_time, remark)
         values
-        (#{folderName}, #{intro}, #{visibleScope}, #{topFlag}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
+        (#{parentId}, #{folderName}, #{intro}, #{visibleScope}, #{topFlag}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
     </insert>
 
     <update id="updateAuditLibraryFolder" parameterType="AuditLibraryFolder">
         update audit_library_folder
         <set>
             <if test="folderName != null and folderName != ''">folder_name = #{folderName},</if>
+            <if test="parentId != null">parent_id = #{parentId},</if>
             <if test="intro != null">intro = #{intro},</if>
             <if test="visibleScope != null and visibleScope != ''">visible_scope = #{visibleScope},</if>
             <if test="topFlag != null and topFlag != ''">top_flag = #{topFlag},</if>
@@ -120,6 +136,29 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <delete id="deleteAuditLibraryFolderByIds">
         delete from audit_library_folder where folder_id in
+        <foreach item="folderId" collection="array" open="(" separator="," close=")">
+            #{folderId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteAuditCommonResourceVersionByFolderIds">
+        delete from audit_common_resource_version where resource_id in (
+            select resource_id from audit_common_resource where folder_id in
+            <foreach item="folderId" collection="array" open="(" separator="," close=")">
+                #{folderId}
+            </foreach>
+        )
+    </delete>
+
+    <delete id="deleteAuditCommonResourceByFolderIds">
+        delete from audit_common_resource where folder_id in
+        <foreach item="folderId" collection="array" open="(" separator="," close=")">
+            #{folderId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteAuditTaskResourceByFolderIds">
+        delete from audit_task_resource where folder_id in
         <foreach item="folderId" collection="array" open="(" separator="," close=")">
             #{folderId}
         </foreach>
@@ -143,7 +182,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="storageStatus != null and storageStatus != ''">
                 and storage_status = #{storageStatus}
             </if>
-            <if test="folderId != null">
+            <if test="folderId != null and folderId == 0">
+                and (folder_id is null or folder_id = 0)
+            </if>
+            <if test="folderId != null and folderId != 0">
                 and folder_id = #{folderId}
             </if>
             <if test="params.beginLatestModifyTime != null and params.beginLatestModifyTime != ''">
@@ -213,6 +255,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where resource_id = #{resourceId}
     </update>
 
+    <update id="updateAuditTaskResourceFolder" parameterType="AuditTaskResource">
+        update audit_task_resource
+        set folder_id = #{folderId},
+            folder_name = #{folderName},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where resource_id = #{resourceId}
+    </update>
+
     <delete id="deleteAuditCommonResourceVersionByResourceIds">
         delete from audit_common_resource_version where resource_id in
         <foreach item="resourceId" collection="array" open="(" separator="," close=")">
@@ -241,7 +292,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 and (file_no like concat('%', #{keyword}, '%')
                     or file_name like concat('%', #{keyword}, '%'))
             </if>
-            <if test="folderId != null">
+            <if test="folderId != null and folderId == 0">
+                and (folder_id is null or folder_id = 0)
+            </if>
+            <if test="folderId != null and folderId != 0">
                 and folder_id = #{folderId}
             </if>
             <if test="collectStatus != null and collectStatus != ''">

@@ -103,20 +103,6 @@ export const constantRoutes = [
 // 动态路由，基于用户权限动态去加载
 export const dynamicRoutes = [
   {
-    path: '/audit',
-    component: Layout,
-    hidden: true,
-    permissions: ['audit:review:detail'],
-    children: [
-      {
-        path: 'review/detail/:taskId(\\d+)',
-        component: () => import('@/views/audit/review/detail'),
-        name: 'AuditReviewDetail',
-        meta: { title: '审核详情', activeMenu: '/audit/review' }
-      }
-    ]
-  },
-  {
     path: '/audit-ai',
     component: Layout,
     hidden: true,

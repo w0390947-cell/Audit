@@ -1,8 +1,9 @@
 package com.ruoyi.system.service.audit.impl;
 
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
-import org.springframework.beans.BeanUtils;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,19 +36,53 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public int insertAuditLibraryFolder(AuditLibraryFolder folder)
     {
+        if (folder.getParentId() == null)
+        {
+            folder.setParentId(0L);
+        }
+        if (StringUtils.isBlank(folder.getVisibleScope()))
+        {
+            folder.setVisibleScope("all");
+        }
+        if (StringUtils.isBlank(folder.getTopFlag()))
+        {
+            folder.setTopFlag("0");
+        }
+        folder.setUpdateBy(folder.getCreateBy());
         return auditLibraryMapper.insertAuditLibraryFolder(folder);
     }
 
     @Override
     public int updateAuditLibraryFolder(AuditLibraryFolder folder)
     {
+        if (folder.getParentId() != null && folder.getFolderId() != null)
+        {
+            if (folder.getFolderId().equals(folder.getParentId()))
+            {
+                return 0;
+            }
+            if (folder.getParentId() > 0)
+            {
+                Set<Long> descendantIds = collectDescendantFolderIds(new Long[] { folder.getFolderId() });
+                if (descendantIds.contains(folder.getParentId()))
+                {
+                    return 0;
+                }
+            }
+        }
         return auditLibraryMapper.updateAuditLibraryFolder(folder);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int deleteAuditLibraryFolderByIds(Long[] folderIds)
     {
-        return auditLibraryMapper.deleteAuditLibraryFolderByIds(folderIds);
+        Set<Long> descendantIds = collectDescendantFolderIds(folderIds);
+        Long[] allFolderIds = descendantIds.toArray(new Long[0]);
+        auditLibraryMapper.deleteAuditCommonResourceVersionByFolderIds(allFolderIds);
+        auditLibraryMapper.deleteAuditCommonResourceByFolderIds(allFolderIds);
+        auditLibraryMapper.deleteAuditTaskResourceByFolderIds(allFolderIds);
+        return auditLibraryMapper.deleteAuditLibraryFolderByIds(allFolderIds);
     }
 
     @Override
@@ -133,6 +168,12 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     }
 
     @Override
+    public int assignAuditTaskResourceFolder(AuditTaskResource resource)
+    {
+        return auditLibraryMapper.updateAuditTaskResourceFolder(resource);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public int deleteAuditCommonResourceByIds(Long[] resourceIds)
     {
@@ -173,5 +214,35 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             versionNumber = Integer.parseInt(numberText) + 1;
         }
         return "v" + versionNumber + ".0";
+    }
+
+    private Set<Long> collectDescendantFolderIds(Long[] folderIds)
+    {
+        Set<Long> allIds = new HashSet<>();
+        if (folderIds == null)
+        {
+            return allIds;
+        }
+        for (Long folderId : folderIds)
+        {
+            if (folderId != null)
+            {
+                allIds.add(folderId);
+            }
+        }
+        List<AuditLibraryFolder> folders = auditLibraryMapper.selectAuditLibraryFolderList(new AuditLibraryFolder());
+        boolean changed = true;
+        while (changed)
+        {
+            changed = false;
+            for (AuditLibraryFolder folder : folders)
+            {
+                if (folder.getParentId() != null && allIds.contains(folder.getParentId()) && allIds.add(folder.getFolderId()))
+                {
+                    changed = true;
+                }
+            }
+        }
+        return allIds;
     }
 }

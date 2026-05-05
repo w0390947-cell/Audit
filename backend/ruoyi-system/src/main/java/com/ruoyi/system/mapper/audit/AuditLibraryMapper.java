@@ -18,6 +18,12 @@ public interface AuditLibraryMapper
 
     int deleteAuditLibraryFolderByIds(Long[] folderIds);
 
+    int deleteAuditCommonResourceVersionByFolderIds(Long[] folderIds);
+
+    int deleteAuditCommonResourceByFolderIds(Long[] folderIds);
+
+    int deleteAuditTaskResourceByFolderIds(Long[] folderIds);
+
     List<AuditCommonResource> selectAuditCommonResourceList(AuditCommonResource resource);
 
     AuditCommonResource selectAuditCommonResourceById(Long resourceId);
@@ -31,6 +37,8 @@ public interface AuditLibraryMapper
     int insertAuditCommonResourceVersion(AuditCommonResourceVersion version);
 
     int updateAuditCommonResourceFolder(AuditCommonResource resource);
+
+    int updateAuditTaskResourceFolder(AuditTaskResource resource);
 
     int deleteAuditCommonResourceVersionByResourceIds(Long[] resourceIds);
 

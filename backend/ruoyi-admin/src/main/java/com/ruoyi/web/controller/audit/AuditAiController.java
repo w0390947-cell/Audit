@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
@@ -64,6 +65,14 @@ public class AuditAiController extends BaseController
     public AjaxResult getInfo(@PathVariable Long aiTaskId)
     {
         return success(auditAiService.selectAuditAiTaskDetail(aiTaskId));
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:review:detail') or @ss.hasPermi('audit:ai:detail')")
+    @PostMapping("/reviewTask/{reviewTaskId}/ensure")
+    public AjaxResult ensureByReviewTask(@PathVariable Long reviewTaskId,
+            @RequestParam(required = false) Long versionId)
+    {
+        return success(auditAiService.ensureAuditAiTaskByReviewTaskId(reviewTaskId, versionId, getUsername()));
     }
 
     @PreAuthorize("@ss.hasPermi('audit:ai:detail')")

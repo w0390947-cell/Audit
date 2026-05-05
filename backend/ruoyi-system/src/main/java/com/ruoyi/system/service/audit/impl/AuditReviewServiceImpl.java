@@ -220,7 +220,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
 
     private List<AuditReviewIssue> resolveReviewIssueList(Long taskId, Long versionId)
     {
-        List<AuditAiFinding> findings = auditAiMapper.selectAuditAiFindingListByReviewTaskId(taskId);
+        List<AuditAiFinding> findings = auditAiMapper.selectAuditAiFindingListByReviewVersionId(versionId);
         if (findings != null && !findings.isEmpty())
         {
             List<AuditReviewIssue> issues = new ArrayList<>();

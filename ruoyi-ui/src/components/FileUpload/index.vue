@@ -211,7 +211,9 @@ export default {
     // 上传成功回调
     handleUploadSuccess(res, file) {
       if (res.code === 200) {
-        this.uploadList.push({ name: res.fileName, url: res.fileName })
+        const fileSizeText = this.formatFileSize(file.size)
+        this.uploadList.push({ name: res.fileName, url: res.fileName, size: file.size, fileSize: fileSizeText })
+        this.$emit("upload-success", { response: res, file, size: file.size, fileSize: fileSizeText })
         this.uploadedSuccessfully()
       } else {
         this.number--
@@ -244,6 +246,16 @@ export default {
       } else {
         return name
       }
+    },
+    formatFileSize(size) {
+      if (!size && size !== 0) return ""
+      if (size >= 1024 * 1024) {
+        return (size / 1024 / 1024).toFixed(2) + "MB"
+      }
+      if (size >= 1024) {
+        return (size / 1024).toFixed(2) + "KB"
+      }
+      return size + "B"
     },
     // 对象转成指定字符串分隔
     listToString(list, separator) {

@@ -75,6 +75,7 @@ CREATE TABLE `audit_asset_resubmit_record` (
 
 CREATE TABLE `audit_library_folder` (
   `folder_id` bigint NOT NULL AUTO_INCREMENT COMMENT '文件库主键',
+  `parent_id` bigint DEFAULT NULL COMMENT '父级文件库主键',
   `folder_name` varchar(100) NOT NULL COMMENT '文件库名称',
   `intro` varchar(500) DEFAULT '' COMMENT '简介',
   `visible_scope` varchar(20) DEFAULT 'all' COMMENT '可见范围',
@@ -85,7 +86,8 @@ CREATE TABLE `audit_library_folder` (
   `update_by` varchar(64) DEFAULT '' COMMENT '更新者',
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
-  PRIMARY KEY (`folder_id`)
+  PRIMARY KEY (`folder_id`),
+  KEY `idx_audit_library_folder_parent` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核文件库';
 
 CREATE TABLE `audit_common_resource` (
@@ -176,7 +178,7 @@ INSERT INTO `sys_menu` (`menu_id`, `menu_name`, `parent_id`, `order_num`, `path`
 (2034, '审核文件库新增', 2032, 2, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:add', '#', 'admin', NOW(), ''),
 (2035, '审核文件库修改', 2032, 3, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:edit', '#', 'admin', NOW(), ''),
 (2036, '审核文件库删除', 2032, 4, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:remove', '#', 'admin', NOW(), ''),
-(2037, '常用文件资源', 2031, 2, 'common', 'audit/library/common', 'AuditLibraryCommon', 1, 0, 'C', '0', '0', 'audit:library:common:list', 'documentation', 'admin', NOW(), '常用文件资源'),
+(2037, '常用文件资源', 2031, 2, 'common', 'audit/library/common', 'AuditLibraryCommon', 1, 0, 'C', '1', '0', 'audit:library:common:list', 'documentation', 'admin', NOW(), '常用文件资源'),
 (2038, '常用文件资源查询', 2037, 1, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:common:query', '#', 'admin', NOW(), ''),
 (2039, '常用文件资源新增', 2037, 2, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:common:add', '#', 'admin', NOW(), ''),
 (2040, '常用文件资源修改', 2037, 3, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:common:edit', '#', 'admin', NOW(), ''),
@@ -216,6 +218,57 @@ SELECT 2, t.menu_id FROM (
 WHERE NOT EXISTS (
   SELECT 1 FROM `sys_role_menu` rm WHERE rm.role_id = 2 AND rm.menu_id = t.menu_id
 );
+
+-- 审核文件库初始化数据：与 backend/ruoyi-admin/src/main/resources/profile/upload/2026/05/05 下的内置文件对应
+INSERT INTO `audit_library_folder`
+(`folder_id`, `parent_id`, `folder_name`, `intro`, `visible_scope`, `top_flag`, `del_flag`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
+VALUES
+(2, 0, '文件库一', '', 'all', '0', '0', 'admin', '2026-05-05 20:38:14', 'admin', '2026-05-05 20:38:14', NULL),
+(3, 0, '文件库二', '', 'all', '0', '0', 'admin', '2026-05-05 20:38:23', 'admin', '2026-05-05 20:38:23', NULL),
+(4, 0, '审核标准库', '', 'all', '0', '0', 'admin', '2026-05-05 20:38:36', 'admin', '2026-05-05 20:38:36', NULL),
+(5, 2, '中心资料', '', 'all', '0', '0', 'admin', '2026-05-05 20:55:41', 'admin', '2026-05-05 20:55:41', NULL),
+(6, 3, '客户资料', '', 'all', '0', '0', 'admin', '2026-05-05 21:01:02', 'admin', '2026-05-05 21:01:02', NULL),
+(7, 3, '中心资料', '', 'all', '0', '0', 'admin', '2026-05-05 21:01:08', 'admin', '2026-05-05 21:01:08', NULL);
+
+INSERT INTO `audit_common_resource`
+(`resource_id`, `document_name`, `folder_id`, `folder_name`, `storage_status`, `progress_text`, `creator`, `latest_modify_time`, `file_size`, `file_name`, `file_url`, `current_version_no`, `del_flag`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
+VALUES
+(1, 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求', 0, '', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:39:11', '1.31MB', 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', '/profile/upload/2026/05/05/GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', 'v1.0', '0', 'admin', '2026-05-05 20:39:10', 'admin', '2026-05-05 20:39:10', NULL),
+(2, 'GBT3836.9-2021', 0, '', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:40:13', '456.47KB', 'GBT3836.9-2021_20260505204011A002.docx', '/profile/upload/2026/05/05/GBT3836.9-2021_20260505204011A002.docx', 'v1.0', '0', 'admin', '2026-05-05 20:40:12', 'admin', '2026-05-05 20:40:12', NULL),
+(3, 'GBT3836.2-2021', 0, '', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:50:02', '23.90MB', 'GBT3836.2-2021_20260505205001A001.pdf', '/profile/upload/2026/05/05/GBT3836.2-2021_20260505205001A001.pdf', 'v1.0', '0', 'admin', '2026-05-05 20:50:02', 'admin', '2026-05-05 20:50:02', NULL),
+(4, '2025520398+其它+技术审查', 5, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:58:31', '58.82KB', '2025520398+其它+技术审查_20260505205830A002.doc', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205830A002.doc', 'v1.0', '0', 'admin', '2026-05-05 20:58:31', 'admin', '2026-05-05 20:58:31', NULL),
+(5, '2025520398+其它+技术审查', 5, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:58:41', '39.74KB', '2025520398+其它+技术审查_20260505205839A003.docx', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205839A003.docx', 'v1.0', '0', 'admin', '2026-05-05 20:58:40', 'admin', '2026-05-05 20:58:40', NULL),
+(6, '2025520398＋合格证＋CCRI25.2513', 5, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:04', '270.13KB', '2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', '/profile/upload/2026/05/05/2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', 'v1.0', '0', 'admin', '2026-05-05 20:59:04', 'admin', '2026-05-05 20:59:04', NULL),
+(7, '任务单【2025520398】', 2, '文件库一', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:17', '363.78KB', '任务单【2025520398】_20260505205916A005.pdf', '/profile/upload/2026/05/05/任务单【2025520398】_20260505205916A005.pdf', 'v1.0', '0', 'admin', '2026-05-05 20:59:17', 'admin', '2026-05-05 20:59:17', NULL),
+(8, 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:45', '265.41KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', 'v1.0', '0', 'admin', '2026-05-05 20:59:44', 'admin', '2026-05-05 20:59:44', NULL),
+(9, 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:54', '136.46KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', 'v1.0', '0', 'admin', '2026-05-05 20:59:53', 'admin', '2026-05-05 20:59:53', NULL),
+(10, 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:00:05', '22.50KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', 'v1.0', '0', 'admin', '2026-05-05 21:00:05', 'admin', '2026-05-05 21:00:05', NULL),
+(11, 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:00:15', '15.16KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', 'v1.0', '0', 'admin', '2026-05-05 21:00:15', 'admin', '2026-05-05 21:00:15', NULL),
+(12, 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:00:29', '134.00KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', 'v1.0', '0', 'admin', '2026-05-05 21:00:29', 'admin', '2026-05-05 21:00:29', NULL),
+(13, 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准', 6, '客户资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:20', '86.22KB', 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', 'v1.0', '0', 'admin', '2026-05-05 21:01:19', 'admin', '2026-05-05 21:01:19', NULL),
+(14, 'KXJ127矿用隔爆兼本安型PLC控制箱说明书', 6, '客户资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:28', '65.17KB', 'KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', 'v1.0', '0', 'admin', '2026-05-05 21:01:28', 'admin', '2026-05-05 21:01:28', NULL),
+(15, '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）', 7, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:44', '154.15KB', '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', '/profile/upload/2026/05/05/安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', 'v1.0', '0', 'admin', '2026-05-05 21:01:44', 'admin', '2026-05-05 21:01:44', NULL),
+(16, '检测分院实验室业务管理系统', 7, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:56', '187.58KB', '检测分院实验室业务管理系统_20260505210152A014.pdf', '/profile/upload/2026/05/05/检测分院实验室业务管理系统_20260505210152A014.pdf', 'v1.0', '0', 'admin', '2026-05-05 21:01:55', 'admin', '2026-05-05 21:01:55', NULL);
+
+INSERT INTO `audit_common_resource_version`
+(`version_id`, `resource_id`, `version_no`, `file_name`, `file_url`, `file_size`, `creator`, `create_time`)
+VALUES
+(1, 1, 'v1.0', 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', '/profile/upload/2026/05/05/GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', '1.31MB', 'admin', '2026-05-05 20:39:11'),
+(2, 2, 'v1.0', 'GBT3836.9-2021_20260505204011A002.docx', '/profile/upload/2026/05/05/GBT3836.9-2021_20260505204011A002.docx', '456.47KB', 'admin', '2026-05-05 20:40:13'),
+(3, 3, 'v1.0', 'GBT3836.2-2021_20260505205001A001.pdf', '/profile/upload/2026/05/05/GBT3836.2-2021_20260505205001A001.pdf', '23.90MB', 'admin', '2026-05-05 20:50:02'),
+(4, 4, 'v1.0', '2025520398+其它+技术审查_20260505205830A002.doc', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205830A002.doc', '58.82KB', 'admin', '2026-05-05 20:58:31'),
+(5, 5, 'v1.0', '2025520398+其它+技术审查_20260505205839A003.docx', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205839A003.docx', '39.74KB', 'admin', '2026-05-05 20:58:41'),
+(6, 6, 'v1.0', '2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', '/profile/upload/2026/05/05/2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', '270.13KB', 'admin', '2026-05-05 20:59:04'),
+(7, 7, 'v1.0', '任务单【2025520398】_20260505205916A005.pdf', '/profile/upload/2026/05/05/任务单【2025520398】_20260505205916A005.pdf', '363.78KB', 'admin', '2026-05-05 20:59:17'),
+(8, 8, 'v1.0', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', '265.41KB', 'admin', '2026-05-05 20:59:45'),
+(9, 9, 'v1.0', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', '136.46KB', 'admin', '2026-05-05 20:59:54'),
+(10, 10, 'v1.0', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', '22.50KB', 'admin', '2026-05-05 21:00:05'),
+(11, 11, 'v1.0', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', '15.16KB', 'admin', '2026-05-05 21:00:15'),
+(12, 12, 'v1.0', 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', '134.00KB', 'admin', '2026-05-05 21:00:29'),
+(13, 13, 'v1.0', 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', '86.22KB', 'admin', '2026-05-05 21:01:20'),
+(14, 14, 'v1.0', 'KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', '65.17KB', 'admin', '2026-05-05 21:01:28'),
+(15, 15, 'v1.0', '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', '/profile/upload/2026/05/05/安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', '154.15KB', 'admin', '2026-05-05 21:01:44'),
+(16, 16, 'v1.0', '检测分院实验室业务管理系统_20260505210152A014.pdf', '/profile/upload/2026/05/05/检测分院实验室业务管理系统_20260505210152A014.pdf', '187.58KB', 'admin', '2026-05-05 21:01:56');
 
 INSERT INTO `audit_asset_record`
 (`asset_id`, `review_task_id`, `task_no`, `product_name`, `delivery_unit`, `submitter`, `reviewer`, `permission_owner`,
@@ -269,46 +322,3 @@ VALUES
 (2, 1, 'v2.0版本', '提交人1', '2025-06-28 15:38:24', '防爆电机检验报告 V2.0.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf', '', 2),
 (3, 3, 'v1.0版本', '提交人1', '2025-06-29 09:10:00', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '', 1),
 (4, 4, 'v1.0版本', '提交人1', '2025-06-29 11:18:00', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '', 1);
-
-INSERT INTO `audit_library_folder`
-(`folder_id`, `folder_name`, `intro`, `visible_scope`, `top_flag`, `del_flag`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
-VALUES
-(1, '置顶文件库', '重点审核模板与制度文件', 'all', '1', '0', 'admin', NOW(), 'admin', NOW(), '置顶文件库'),
-(2, '文件库一', '通用审核资料', 'all', '0', '0', 'admin', NOW(), 'admin', NOW(), '全部可见'),
-(3, '文件库二', '项目归档文档', 'all', '0', '0', 'admin', NOW(), 'admin', NOW(), '全部可见'),
-(4, '文件库三', '审核样例材料', 'all', '0', '0', 'admin', NOW(), 'admin', NOW(), '全部可见'),
-(5, '文件库四', '管理员专用', 'admin', '0', '0', 'admin', NOW(), 'admin', NOW(), '仅超级管理员可见');
-
-INSERT INTO `audit_common_resource`
-(`resource_id`, `document_name`, `folder_id`, `folder_name`, `storage_status`, `progress_text`, `creator`, `latest_modify_time`,
- `file_size`, `file_name`, `file_url`, `current_version_no`, `del_flag`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
-VALUES
-(1, 'SF-13331', 2, '文件库一', 'processing', '文本解析智能体解析中', '创建者1', '2025-06-18 13:35:00',
- '5MB', '防爆电机检验报告 V2.0.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf', 'v2.0', '0', 'admin', NOW(), 'admin', NOW(), '入库处理中'),
-(2, 'SF-13331', 2, '文件库一', 'stored', '文本解析智能体解析成功', '创建者1', '2025-06-18 13:35:00',
- '5MB', '防爆电机检验报告 V2.0.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf', 'v2.0', '0', 'admin', NOW(), 'admin', NOW(), '已入库'),
-(3, 'SF-13331', 2, '文件库一', 'stored', '文本解析智能体解析成功', '创建者1', '2025-06-18 13:35:00',
- '5MB', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', 'v1.0', '0', 'admin', NOW(), 'admin', NOW(), '已入库'),
-(4, 'SF-SF-13331', 2, '文件库一', 'failed', '文本解析智能体解析失败', '创建者1', '2025-06-18 13:35:00',
- '5MB', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', 'v1.0', '0', 'admin', NOW(), 'admin', NOW(), '入库失败');
-
-INSERT INTO `audit_common_resource_version`
-(`version_id`, `resource_id`, `version_no`, `file_name`, `file_url`, `file_size`, `creator`, `create_time`)
-VALUES
-(1, 2, 'v1.0', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '5MB', '创建者1', '2025-06-18 13:35:00'),
-(2, 2, 'v2.0', '防爆电机检验报告 V2.0.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf', '5MB', '创建者1', '2025-06-18 13:36:00'),
-(3, 3, 'v1.0', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '5MB', '创建者1', '2025-06-18 13:35:00'),
-(4, 4, 'v1.0', '防爆电机检验报告 V1.0.pdf', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '5MB', '创建者1', '2025-06-18 13:35:00');
-
-INSERT INTO `audit_task_resource`
-(`resource_id`, `file_no`, `file_name`, `archive_time`, `folder_id`, `folder_name`, `collect_status`, `preview_file_url`,
- `del_flag`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
-VALUES
-(1, 'GF-123131', '文件名称1', '2025-06-18 13:35:00', 2, '文件库1归属', 'processing', '/profile/audit/review/防爆电机检验报告_V2.0.pdf',
- '0', 'admin', NOW(), 'admin', NOW(), '归集处理中'),
-(2, 'GF-123131', '文件名称1', '2025-06-18 13:35:00', 2, '文件库1归属', 'archived', '/profile/audit/review/防爆电机检验报告_V2.0.pdf',
- '0', 'admin', NOW(), 'admin', NOW(), '已归集'),
-(3, 'GF-123131', '文件名称1', '2025-06-18 13:35:00', NULL, '未归属文件库', 'failed', '/profile/audit/review/防爆电机检验报告_V1.0.pdf',
- '0', 'admin', NOW(), 'admin', NOW(), '归集失败'),
-(4, 'GF-123131', '文件名称1', '2025-06-18 13:35:00', NULL, '未归属文件库', 'failed', '/profile/audit/review/防爆电机检验报告_V1.0.pdf',
- '0', 'admin', NOW(), 'admin', NOW(), '归集失败');

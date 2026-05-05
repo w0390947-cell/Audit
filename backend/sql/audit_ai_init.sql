@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS `audit_ai_task`;
 CREATE TABLE `audit_ai_task` (
   `ai_task_id` bigint NOT NULL AUTO_INCREMENT COMMENT 'AI任务主键',
   `review_task_id` bigint DEFAULT NULL COMMENT '审核任务主键',
+  `review_version_id` bigint DEFAULT NULL COMMENT '审核任务版本主键',
   `task_no` varchar(64) NOT NULL COMMENT '任务编号',
   `product_name` varchar(100) NOT NULL COMMENT '产品名称',
   `delivery_unit` varchar(100) DEFAULT '' COMMENT '送检单位',
@@ -31,7 +32,8 @@ CREATE TABLE `audit_ai_task` (
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`ai_task_id`),
-  KEY `idx_audit_ai_task_no` (`task_no`)
+  KEY `idx_audit_ai_task_no` (`task_no`),
+  KEY `idx_audit_ai_review_version` (`review_task_id`, `review_version_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI任务队列表';
 
 CREATE TABLE `audit_ai_finding` (
@@ -92,24 +94,24 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO `audit_ai_task`
-(`ai_task_id`, `review_task_id`, `task_no`, `product_name`, `delivery_unit`, `submitter`, `priority`, `queue_position`,
+(`ai_task_id`, `review_task_id`, `review_version_id`, `task_no`, `product_name`, `delivery_unit`, `submitter`, `priority`, `queue_position`,
  `task_status`, `estimated_duration`, `progress_percent`, `progress_text`, `ai_analysis_count`, `review_status`,
  `report_file_name`, `report_file_url`, `ai_summary`, `review_opinion`, `reviewer`, `submit_time`, `create_by`,
  `create_time`, `update_by`, `update_time`, `remark`)
 VALUES
-(1, 1, 'SF-16542598454', '产品名称1', '送检单位1', '提交人1', 'high', 1, 'executing', '3分钟', 62, '智能体等待处理', 3, 'pending',
+(1, 1, 2, 'SF-16542598454', '产品名称1', '送检单位1', '提交人1', 'high', 1, 'executing', '3分钟', 62, '智能体等待处理', 3, 'pending',
  '煤科院煤炭产品质量检测报告.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf',
  '本次报告经 AI 核查，发现存在内容缺失、格式错误两类问题，具体已汇总如下，对应报告中相关标注位置，便于整改完善。',
  '', '', '2025-06-18 13:35:00', 'admin', NOW(), 'admin', NOW(), '执行中的高优先级任务'),
-(2, 1, 'SF-16542598455', '产品名称1', '送检单位1', '提交人1', 'high', 2, 'executing', '3分钟', 44, '文本解析智能体处理中', 3, 'pending',
+(2, 2, 3, 'SF-16542598455', '产品名称1', '送检单位1', '提交人1', 'high', 2, 'executing', '3分钟', 44, '文本解析智能体处理中', 3, 'pending',
  '煤科院煤炭产品质量检测报告.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf',
  '文本解析智能体已完成段落抽取，正在输出结构化结果。',
  '', '', '2025-06-18 13:36:00', 'admin', NOW(), 'admin', NOW(), '正在解析的任务'),
-(3, 1, 'SF-16542598456', '产品名称1', '送检单位1', '提交人1', 'medium', 3, 'waiting', '3分钟', 18, '智能体等待处理', 3, 'pending',
+(3, 3, 4, 'SF-16542598456', '产品名称1', '送检单位1', '提交人1', 'medium', 3, 'waiting', '3分钟', 18, '智能体等待处理', 3, 'pending',
  '煤科院煤炭产品质量检测报告.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf',
  '当前任务正在排队，预计在完成前序高优先级任务后自动启动。',
  '', '', '2025-06-18 13:37:00', 'admin', NOW(), 'admin', NOW(), '等待中的任务'),
-(4, 1, 'SF-16542598457', '产品名称1', '送检单位1', '提交人1', 'low', 4, 'paused', '3分钟', 6, '任务已暂停，等待恢复', 3, 'pending',
+(4, 4, 5, 'SF-16542598457', '产品名称1', '送检单位1', '提交人1', 'low', 4, 'paused', '3分钟', 6, '任务已暂停，等待恢复', 3, 'pending',
  '煤科院煤炭产品质量检测报告.pdf', '/profile/audit/review/防爆电机检验报告_V2.0.pdf',
  '低优先级任务已被暂缓处理，待人工恢复后重新进入队列。',
  '', '', '2025-06-18 13:38:00', 'admin', NOW(), 'admin', NOW(), '暂停中的任务');

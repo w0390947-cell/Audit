@@ -27,6 +27,8 @@ public interface IAuditLibraryService
 
     int assignAuditCommonResourceFolder(AuditCommonResource resource);
 
+    int assignAuditTaskResourceFolder(AuditTaskResource resource);
+
     int deleteAuditCommonResourceByIds(Long[] resourceIds);
 
     List<AuditTaskResource> selectAuditTaskResourceList(AuditTaskResource resource);

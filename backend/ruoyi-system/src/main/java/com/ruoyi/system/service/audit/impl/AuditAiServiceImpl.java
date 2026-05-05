@@ -11,11 +11,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.config.FastGptProperties;
 import com.ruoyi.system.domain.audit.AuditAiStats;
 import com.ruoyi.system.domain.audit.AuditAiTask;
+import com.ruoyi.system.domain.audit.AuditReviewTask;
+import com.ruoyi.system.domain.audit.AuditReviewVersion;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
+import com.ruoyi.system.mapper.audit.AuditReviewMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisService;
 import com.ruoyi.system.service.audit.IAuditAiService;
 
@@ -26,6 +30,9 @@ public class AuditAiServiceImpl implements IAuditAiService
 
     @Autowired
     private AuditAiMapper auditAiMapper;
+
+    @Autowired
+    private AuditReviewMapper auditReviewMapper;
 
     @Autowired
     private FastGptProperties fastGptProperties;
@@ -51,16 +58,48 @@ public class AuditAiServiceImpl implements IAuditAiService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AuditAiTask ensureAuditAiTaskByReviewTaskId(Long reviewTaskId, Long reviewVersionId, String operator)
+    {
+        if (reviewTaskId == null)
+        {
+            throw new ServiceException("审核任务ID不能为空");
+        }
+
+        AuditReviewTask reviewTask = auditReviewMapper.selectAuditReviewTaskById(reviewTaskId);
+        if (reviewTask == null)
+        {
+            throw new ServiceException("审核任务不存在");
+        }
+        AuditReviewVersion reviewVersion = getReviewVersion(reviewTaskId, reviewVersionId);
+        AuditAiTask existingTask = auditAiMapper.selectAuditAiTaskByReviewVersion(reviewTaskId, reviewVersion.getVersionId());
+        if (existingTask != null)
+        {
+            return existingTask;
+        }
+
+        AuditAiTask aiTask = buildAuditAiTask(reviewTask, reviewVersion, operator);
+        auditAiMapper.insertAuditAiTask(aiTask);
+        resortQueuePositions(operator);
+        return auditAiMapper.selectAuditAiTaskById(aiTask.getAiTaskId());
+    }
+
+    @Override
     public AuditAiStats selectAuditAiStats()
     {
         List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
         AuditAiStats stats = new AuditAiStats();
-        stats.setQueueGroupCount(3);
+        stats.setQueueGroupCount((int) list.stream()
+                .map(AuditAiTask::getPriority)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .count());
         stats.setTotalTaskCount(list.size());
         stats.setCurrentQueueTaskCount(list.size());
         stats.setWaitingCount((int) list.stream().filter(item -> "waiting".equals(item.getTaskStatus())).count());
         stats.setExecutingCount((int) list.stream().filter(item -> "executing".equals(item.getTaskStatus())).count());
         stats.setPausedCount((int) list.stream().filter(item -> "paused".equals(item.getTaskStatus())).count());
+        stats.setCompletedCount((int) list.stream().filter(item -> "completed".equals(item.getTaskStatus())).count());
         stats.setHighCount((int) list.stream().filter(item -> "high".equals(item.getPriority())).count());
         stats.setMediumCount((int) list.stream().filter(item -> "medium".equals(item.getPriority())).count());
         stats.setLowCount((int) list.stream().filter(item -> "low".equals(item.getPriority())).count());
@@ -244,6 +283,97 @@ public class AuditAiServiceImpl implements IAuditAiService
             return "high";
         }
         return "high";
+    }
+
+    private AuditReviewVersion getReviewVersion(Long reviewTaskId, Long reviewVersionId)
+    {
+        if (reviewVersionId != null)
+        {
+            AuditReviewVersion reviewVersion = auditReviewMapper.selectAuditReviewVersionById(reviewVersionId);
+            if (reviewVersion == null || !reviewTaskId.equals(reviewVersion.getTaskId()))
+            {
+                throw new ServiceException("审核任务版本不存在");
+            }
+            return reviewVersion;
+        }
+
+        List<AuditReviewVersion> versionList = auditReviewMapper.selectAuditReviewVersionListByTaskId(reviewTaskId);
+        for (AuditReviewVersion reviewVersion : versionList)
+        {
+            if ("1".equals(reviewVersion.getCurrentFlag()))
+            {
+                return reviewVersion;
+            }
+        }
+        if (!versionList.isEmpty())
+        {
+            return versionList.get(0);
+        }
+        throw new ServiceException("审核任务版本不存在");
+    }
+
+    private AuditAiTask buildAuditAiTask(AuditReviewTask reviewTask, AuditReviewVersion reviewVersion, String operator)
+    {
+        String reportFileUrl = StringUtils.defaultIfBlank(getPrimaryFileUrl(reviewVersion.getMainReportUrls()),
+                reviewVersion.getReportFileUrl());
+        AuditAiTask aiTask = new AuditAiTask();
+        aiTask.setReviewTaskId(reviewTask.getTaskId());
+        aiTask.setReviewVersionId(reviewVersion.getVersionId());
+        aiTask.setTaskNo(reviewTask.getTaskNo());
+        aiTask.setProductName(reviewTask.getProductName());
+        aiTask.setDeliveryUnit(reviewTask.getDeliveryUnit());
+        aiTask.setSubmitter(StringUtils.defaultIfBlank(reviewVersion.getSubmitter(), reviewTask.getSponsor()));
+        aiTask.setPriority(StringUtils.defaultIfBlank(reviewTask.getPriority(), "medium"));
+        aiTask.setQueuePosition(nextQueuePosition());
+        aiTask.setTaskStatus("waiting");
+        aiTask.setEstimatedDuration("3分钟");
+        aiTask.setProgressPercent(0);
+        aiTask.setProgressText("智能体等待处理");
+        aiTask.setAiAnalysisCount(0);
+        aiTask.setReviewStatus(StringUtils.defaultIfBlank(reviewTask.getReviewStatus(), "pending"));
+        aiTask.setReportFileUrl(reportFileUrl);
+        aiTask.setReportFileName(StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
+                extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf")));
+        aiTask.setAiSummary(StringUtils.defaultIfBlank(reviewVersion.getAiSummary(), ""));
+        aiTask.setReviewOpinion(StringUtils.defaultIfBlank(reviewVersion.getReviewOpinion(), ""));
+        aiTask.setReviewer("");
+        aiTask.setSubmitTime(reviewVersion.getSubmitTime() == null ? reviewTask.getSubmitTime() : reviewVersion.getSubmitTime());
+        aiTask.setCreateBy(operator);
+        aiTask.setRemark("由审核列表详情入口自动创建：" + reviewVersion.getVersionNo());
+        return aiTask;
+    }
+
+    private int nextQueuePosition()
+    {
+        List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
+        int max = 0;
+        for (AuditAiTask task : list)
+        {
+            if (task.getQueuePosition() != null && task.getQueuePosition() > max)
+            {
+                max = task.getQueuePosition();
+            }
+        }
+        return max + 1;
+    }
+
+    private String getPrimaryFileUrl(String fileUrls)
+    {
+        if (StringUtils.isBlank(fileUrls))
+        {
+            return "";
+        }
+        return fileUrls.split(",")[0];
+    }
+
+    private String extractFileName(String fileUrl, String fallback)
+    {
+        if (StringUtils.isBlank(fileUrl))
+        {
+            return fallback;
+        }
+        int index = fileUrl.lastIndexOf("/");
+        return index > -1 ? fileUrl.substring(index + 1) : fileUrl;
     }
 
     private String buildProgressText(String taskStatus)

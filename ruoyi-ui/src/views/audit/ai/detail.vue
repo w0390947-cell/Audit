@@ -241,7 +241,7 @@ export default {
       if (!this.detail.reviewTaskId) {
         return Promise.resolve()
       }
-      return getReview(this.detail.reviewTaskId).then(response => {
+      return getReview(this.detail.reviewTaskId, this.detail.reviewVersionId).then(response => {
         this.reviewDetail = response.data || {
           stageList: [],
           issueList: [],

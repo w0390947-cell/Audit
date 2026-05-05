@@ -10,6 +10,8 @@ public interface IAuditAiService
 
     AuditAiTask selectAuditAiTaskDetail(Long aiTaskId);
 
+    AuditAiTask ensureAuditAiTaskByReviewTaskId(Long reviewTaskId, Long reviewVersionId, String operator);
+
     AuditAiStats selectAuditAiStats();
 
     List<String> selectSubmitterList();

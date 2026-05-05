@@ -51,6 +51,7 @@ public class AuditLibraryController extends BaseController
     public AjaxResult addFolder(@Validated @RequestBody AuditLibraryFolder folder)
     {
         folder.setCreateBy(getUsername());
+        folder.setUpdateBy(getUsername());
         return toAjax(auditLibraryService.insertAuditLibraryFolder(folder));
     }
 
@@ -113,6 +114,15 @@ public class AuditLibraryController extends BaseController
     {
         resource.setUpdateBy(getUsername());
         return toAjax(auditLibraryService.assignAuditCommonResourceFolder(resource));
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:library:task:edit')")
+    @Log(title = "任务文件资源", businessType = BusinessType.UPDATE)
+    @PutMapping("/task/assignFolder")
+    public AjaxResult assignTaskFolder(@RequestBody AuditTaskResource resource)
+    {
+        resource.setUpdateBy(getUsername());
+        return toAjax(auditLibraryService.assignAuditTaskResourceFolder(resource));
     }
 
     @PreAuthorize("@ss.hasPermi('audit:library:common:remove')")

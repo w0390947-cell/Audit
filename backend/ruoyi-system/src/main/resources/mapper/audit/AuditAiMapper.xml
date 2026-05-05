@@ -7,6 +7,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <resultMap id="AuditAiTaskResult" type="AuditAiTask">
         <result property="aiTaskId" column="ai_task_id"/>
         <result property="reviewTaskId" column="review_task_id"/>
+        <result property="reviewVersionId" column="review_version_id"/>
         <result property="taskNo" column="task_no"/>
         <result property="productName" column="product_name"/>
         <result property="deliveryUnit" column="delivery_unit"/>
@@ -44,7 +45,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="selectAuditAiTaskVo">
-        select a.ai_task_id, a.review_task_id, a.task_no, a.product_name, a.delivery_unit, a.submitter, a.priority,
+        select a.ai_task_id, a.review_task_id, a.review_version_id, a.task_no, a.product_name, a.delivery_unit, a.submitter, a.priority,
                a.queue_position, a.task_status, a.estimated_duration, a.progress_percent, a.progress_text,
                a.ai_analysis_count, a.review_status, a.report_file_name, a.report_file_url,
                r.basis_file_urls,
@@ -91,6 +92,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where a.ai_task_id = #{aiTaskId} and a.del_flag = '0'
     </select>
 
+    <select id="selectAuditAiTaskByReviewVersion" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        where a.review_task_id = #{reviewTaskId}
+          and a.review_version_id = #{reviewVersionId}
+          and a.del_flag = '0'
+        order by a.ai_task_id desc
+        limit 1
+    </select>
+
     <select id="selectAuditAiFindingListByTaskId" parameterType="Long" resultMap="AuditAiFindingResult">
         select finding_id, ai_task_id, finding_type, finding_title, finding_content, sort_num
         from audit_ai_finding
@@ -103,6 +113,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from audit_ai_finding f
         inner join audit_ai_task t on t.ai_task_id = f.ai_task_id
         where t.review_task_id = #{reviewTaskId}
+          and t.del_flag = '0'
+        order by t.update_time desc, t.ai_task_id desc, f.sort_num asc, f.finding_id asc
+    </select>
+
+    <select id="selectAuditAiFindingListByReviewVersionId" parameterType="Long" resultMap="AuditAiFindingResult">
+        select f.finding_id, f.ai_task_id, f.finding_type, f.finding_title, f.finding_content, f.sort_num
+        from audit_ai_finding f
+        inner join audit_ai_task t on t.ai_task_id = f.ai_task_id
+        where t.review_version_id = #{reviewVersionId}
           and t.del_flag = '0'
         order by t.update_time desc, t.ai_task_id desc, f.sort_num asc, f.finding_id asc
     </select>
@@ -124,12 +143,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertAuditAiTask" parameterType="AuditAiTask" useGeneratedKeys="true" keyProperty="aiTaskId">
         insert into audit_ai_task (
-            review_task_id, task_no, product_name, delivery_unit, submitter, priority, queue_position,
+            review_task_id, review_version_id, task_no, product_name, delivery_unit, submitter, priority, queue_position,
             task_status, estimated_duration, progress_percent, progress_text, ai_analysis_count, review_status,
             report_file_name, report_file_url, ai_summary, review_opinion, reviewer, submit_time,
             create_by, create_time, remark
         ) values (
-            #{reviewTaskId}, #{taskNo}, #{productName}, #{deliveryUnit}, #{submitter}, #{priority}, #{queuePosition},
+            #{reviewTaskId}, #{reviewVersionId}, #{taskNo}, #{productName}, #{deliveryUnit}, #{submitter}, #{priority}, #{queuePosition},
             #{taskStatus}, #{estimatedDuration}, #{progressPercent}, #{progressText}, #{aiAnalysisCount}, #{reviewStatus},
             #{reportFileName}, #{reportFileUrl}, #{aiSummary}, #{reviewOpinion}, #{reviewer}, #{submitTime},
             #{createBy}, sysdate(), #{remark}

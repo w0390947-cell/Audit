@@ -33,6 +33,15 @@ export function getAiTask(aiTaskId) {
   })
 }
 
+// 按审核任务获取或创建 AI 任务
+export function ensureAiTaskByReviewTask(reviewTaskId, versionId) {
+  return request({
+    url: '/audit/ai/reviewTask/' + reviewTaskId + '/ensure',
+    method: 'post',
+    params: { versionId }
+  })
+}
+
 // 查询 AI 任务报告预览文件
 export function getAiReportPreview(aiTaskId) {
   return request({

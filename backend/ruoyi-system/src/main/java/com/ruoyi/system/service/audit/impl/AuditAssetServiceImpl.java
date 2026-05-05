@@ -8,6 +8,7 @@ import java.nio.file.StandardCopyOption;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
@@ -49,16 +50,60 @@ public class AuditAssetServiceImpl implements IAuditAssetService
     {
         List<AuditAssetRecord> list = auditAssetMapper.selectAuditAssetAllList();
         AuditAssetStats stats = new AuditAssetStats();
-        stats.setYearLabel("2025年");
-        stats.setTotalCount(list.size() * 250);
-        stats.setCurrentCategoryCount(36);
-        stats.setMonthLabels(Arrays.asList("1月", "2月", "3月", "4月", "5月", "6月"));
-        stats.setYearApprovedData(Arrays.asList(620));
-        stats.setYearReturnedData(Arrays.asList(360));
-        stats.setMonthApprovedData(Arrays.asList(220, 120, 240, 180, 70, 160));
-        stats.setMonthReturnedData(Arrays.asList(130, 65, 25, 130, 35, 70));
+        Calendar current = Calendar.getInstance();
+        int currentYear = current.get(Calendar.YEAR);
+        int[] monthApproved = new int[12];
+        int[] monthReturned = new int[12];
+        int yearApprovedCount = 0;
+        int yearReturnedCount = 0;
+        int currentYearCount = 0;
         long approvedCount = list.stream().filter(item -> "approved".equals(item.getReviewStatus())).count();
         long returnedCount = list.stream().filter(item -> "returned".equals(item.getReviewStatus())).count();
+
+        for (AuditAssetRecord item : list)
+        {
+            if (item.getReviewTime() == null)
+            {
+                continue;
+            }
+            Calendar reviewTime = Calendar.getInstance();
+            reviewTime.setTime(item.getReviewTime());
+            if (reviewTime.get(Calendar.YEAR) != currentYear)
+            {
+                continue;
+            }
+            currentYearCount++;
+            int monthIndex = reviewTime.get(Calendar.MONTH);
+            if ("approved".equals(item.getReviewStatus()))
+            {
+                monthApproved[monthIndex]++;
+                yearApprovedCount++;
+            }
+            else if ("returned".equals(item.getReviewStatus()))
+            {
+                monthReturned[monthIndex]++;
+                yearReturnedCount++;
+            }
+        }
+
+        List<String> monthLabels = new ArrayList<>();
+        List<Integer> monthApprovedData = new ArrayList<>();
+        List<Integer> monthReturnedData = new ArrayList<>();
+        for (int i = 0; i < 12; i++)
+        {
+            monthLabels.add((i + 1) + "月");
+            monthApprovedData.add(monthApproved[i]);
+            monthReturnedData.add(monthReturned[i]);
+        }
+
+        stats.setYearLabel(currentYear + "年");
+        stats.setTotalCount(list.size());
+        stats.setCurrentCategoryCount(currentYearCount);
+        stats.setMonthLabels(monthLabels);
+        stats.setYearApprovedData(Arrays.asList(yearApprovedCount));
+        stats.setYearReturnedData(Arrays.asList(yearReturnedCount));
+        stats.setMonthApprovedData(monthApprovedData);
+        stats.setMonthReturnedData(monthReturnedData);
         stats.setPieLabels(Arrays.asList("审核通过归档", "驳回归档"));
         stats.setPieData(Arrays.asList((int) approvedCount, (int) returnedCount));
         return stats;

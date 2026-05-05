@@ -331,6 +331,7 @@
 
 <script>
 import FileUpload from '@/components/FileUpload'
+import { ensureAiTaskByReviewTask } from '@/api/audit/ai'
 import { listCommonResource, listLibraryFolders, listTaskResource } from '@/api/audit/library'
 import {
   addReview,
@@ -507,8 +508,15 @@ export default {
       })
     },
     handleDetail(row) {
-      this.$router.push({
-        path: '/audit/review/detail/' + row.taskId
+      ensureAiTaskByReviewTask(row.taskId).then(response => {
+        const aiTask = response.data || {}
+        if (!aiTask.aiTaskId) {
+          this.$modal.msgWarning('未获取到对应AI任务')
+          return
+        }
+        this.$router.push({
+          path: '/audit-ai/detail/' + aiTask.aiTaskId
+        })
       })
     },
     handleHistory(row) {
@@ -522,10 +530,16 @@ export default {
       })
     },
     jumpVersionDetail(row) {
-      this.historyOpen = false
-      this.$router.push({
-        path: '/audit/review/detail/' + row.taskId,
-        query: { versionId: row.versionId }
+      ensureAiTaskByReviewTask(row.taskId, row.versionId).then(response => {
+        const aiTask = response.data || {}
+        if (!aiTask.aiTaskId) {
+          this.$modal.msgWarning('未获取到对应AI任务')
+          return
+        }
+        this.historyOpen = false
+        this.$router.push({
+          path: '/audit-ai/detail/' + aiTask.aiTaskId
+        })
       })
     },
     handleSelectFromLibrary() {

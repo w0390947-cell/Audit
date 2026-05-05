@@ -18,6 +18,8 @@ public class AuditAiStats implements Serializable
 
     private Integer pausedCount;
 
+    private Integer completedCount;
+
     private Double completionRate;
 
     private Integer highCount;
@@ -84,6 +86,16 @@ public class AuditAiStats implements Serializable
     public void setPausedCount(Integer pausedCount)
     {
         this.pausedCount = pausedCount;
+    }
+
+    public Integer getCompletedCount()
+    {
+        return completedCount;
+    }
+
+    public void setCompletedCount(Integer completedCount)
+    {
+        this.completedCount = completedCount;
     }
 
     public Double getCompletionRate()

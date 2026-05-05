@@ -100,6 +100,14 @@ export function reuploadTaskResource(data) {
   })
 }
 
+export function assignTaskResourceFolder(data) {
+  return request({
+    url: '/audit/library/task/assignFolder',
+    method: 'put',
+    data
+  })
+}
+
 export function delTaskResource(resourceId) {
   return request({
     url: '/audit/library/task/' + resourceId,

@@ -13,9 +13,14 @@ public interface AuditAiMapper
 
     AuditAiTask selectAuditAiTaskById(Long aiTaskId);
 
+    AuditAiTask selectAuditAiTaskByReviewVersion(@Param("reviewTaskId") Long reviewTaskId,
+            @Param("reviewVersionId") Long reviewVersionId);
+
     List<AuditAiFinding> selectAuditAiFindingListByTaskId(Long aiTaskId);
 
     List<AuditAiFinding> selectAuditAiFindingListByReviewTaskId(Long reviewTaskId);
+
+    List<AuditAiFinding> selectAuditAiFindingListByReviewVersionId(Long reviewVersionId);
 
     List<AuditAiTask> selectAuditAiTaskListByIds(Long[] aiTaskIds);
 

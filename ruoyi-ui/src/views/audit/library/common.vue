@@ -158,6 +158,7 @@
               :dropzone="true"
               button-text="上传文件"
               drop-hint="拖放文件"
+              @upload-success="handleFileUploadSuccess"
             />
           </div>
         </el-form-item>
@@ -270,7 +271,7 @@ export default {
         creator: '',
         fileUrl: '',
         fileName: '',
-        fileSize: '5MB',
+        fileSize: '',
         folderId: undefined,
         folderName: ''
       },
@@ -350,7 +351,7 @@ export default {
         creator: this.$store.getters.name || 'admin',
         fileUrl: '',
         fileName: '',
-        fileSize: '5MB',
+        fileSize: '',
         folderId: undefined,
         folderName: ''
       }
@@ -374,7 +375,7 @@ export default {
           creator: data.creator,
           fileUrl: data.fileUrl,
           fileName: data.fileName,
-          fileSize: data.fileSize || '5MB',
+          fileSize: data.fileSize || '',
           folderId: data.folderId,
           folderName: data.folderName || ''
         }
@@ -384,6 +385,9 @@ export default {
           this.$refs.form && this.$refs.form.clearValidate()
         })
       })
+    },
+    handleFileUploadSuccess(payload) {
+      this.form.fileSize = payload.fileSize || ''
     },
     submitForm() {
       this.$refs.form.validate(valid => {
@@ -397,7 +401,7 @@ export default {
           creator: this.form.creator,
           fileUrl,
           fileName: this.getFileName(fileUrl),
-          fileSize: this.form.fileSize || '5MB',
+          fileSize: this.form.fileSize || '',
           folderId: this.form.folderId,
           folderName: this.form.folderName,
           storageStatus: this.form.resourceId ? undefined : 'processing',

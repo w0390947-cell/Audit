@@ -9,6 +9,8 @@ public class AuditLibraryFolder extends BaseEntity
 
     private Long folderId;
 
+    private Long parentId;
+
     @Excel(name = "文件库名称")
     private String folderName;
 
@@ -31,6 +33,16 @@ public class AuditLibraryFolder extends BaseEntity
     public void setFolderId(Long folderId)
     {
         this.folderId = folderId;
+    }
+
+    public Long getParentId()
+    {
+        return parentId;
+    }
+
+    public void setParentId(Long parentId)
+    {
+        this.parentId = parentId;
     }
 
     public String getFolderName()

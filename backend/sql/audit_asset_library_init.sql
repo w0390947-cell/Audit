@@ -1,6 +1,7 @@
 SET NAMES utf8mb4;
 
 DROP TABLE IF EXISTS `audit_task_resource`;
+DROP TABLE IF EXISTS `audit_vector_task`;
 DROP TABLE IF EXISTS `audit_common_resource_version`;
 DROP TABLE IF EXISTS `audit_common_resource`;
 DROP TABLE IF EXISTS `audit_library_folder`;
@@ -143,6 +144,23 @@ CREATE TABLE `audit_task_resource` (
   PRIMARY KEY (`resource_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='任务文件资源表';
 
+CREATE TABLE IF NOT EXISTS `audit_vector_task` (
+  `task_id` bigint NOT NULL AUTO_INCREMENT COMMENT '任务主键',
+  `resource_id` bigint NOT NULL COMMENT '文件资源主键',
+  `task_type` varchar(20) NOT NULL COMMENT '任务类型 index/reindex/delete',
+  `task_status` varchar(20) DEFAULT 'pending' COMMENT 'pending/running/success/failed/skipped/cancelled',
+  `retry_count` int DEFAULT 0 COMMENT '重试次数',
+  `max_retry_count` int DEFAULT 3 COMMENT '最大重试次数',
+  `progress_text` varchar(255) DEFAULT '' COMMENT '任务进度',
+  `error_msg` text COMMENT '错误信息',
+  `create_by` varchar(64) DEFAULT '',
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`task_id`),
+  KEY `idx_audit_vector_task_status` (`task_status`),
+  KEY `idx_audit_vector_task_resource` (`resource_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核文件向量化任务表';
+
 DELETE FROM `sys_dict_data` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status');
 DELETE FROM `sys_dict_type` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status');
 
@@ -154,6 +172,10 @@ INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value
 (2401, 1, '入库中', 'processing', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
 (2402, 2, '已入库', 'stored', 'audit_file_storage_status', 'primary', 'Y', '0', 'admin', NOW()),
 (2403, 3, '入库失败', 'failed', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
+(2404, 4, '等待向量化', 'pending', 'audit_file_storage_status', 'info', 'N', '0', 'admin', NOW()),
+(2405, 5, '解析中', 'parsing', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
+(2406, 6, '向量生成中', 'embedding', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
+(2407, 7, '未识别文本', 'text_empty', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
 (2411, 1, '归集处理中', 'processing', 'audit_task_collect_status', 'primary', 'N', '0', 'admin', NOW()),
 (2412, 2, '已归集', 'archived', 'audit_task_collect_status', 'success', 'Y', '0', 'admin', NOW()),
 (2413, 3, '归集失败', 'failed', 'audit_task_collect_status', 'danger', 'N', '0', 'admin', NOW());

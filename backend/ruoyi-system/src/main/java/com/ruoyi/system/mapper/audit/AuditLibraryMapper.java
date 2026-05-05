@@ -22,6 +22,8 @@ public interface AuditLibraryMapper
 
     int deleteAuditCommonResourceByFolderIds(Long[] folderIds);
 
+    List<Long> selectAuditCommonResourceIdsByFolderIds(Long[] folderIds);
+
     int deleteAuditTaskResourceByFolderIds(Long[] folderIds);
 
     List<AuditCommonResource> selectAuditCommonResourceList(AuditCommonResource resource);

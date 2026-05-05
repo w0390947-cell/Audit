@@ -157,6 +157,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </foreach>
     </delete>
 
+    <select id="selectAuditCommonResourceIdsByFolderIds" resultType="Long">
+        select resource_id
+        from audit_common_resource
+        where folder_id in
+        <foreach item="folderId" collection="array" open="(" separator="," close=")">
+            #{folderId}
+        </foreach>
+    </select>
+
     <delete id="deleteAuditTaskResourceByFolderIds">
         delete from audit_task_resource where folder_id in
         <foreach item="folderId" collection="array" open="(" separator="," close=")">

@@ -169,3 +169,40 @@ fastgpt:
   default-audit-standard: GB/T 5751-2014
   # 最大并发任务数
   max-running-tasks: 3
+
+# 审核文件库向量化配置
+vector:
+  # 阶段 1 默认关闭，避免未部署 PostgreSQL/pgvector 时影响现有业务启动
+  enabled: true
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/audit_vector
+    username: audit_vector_user
+    password: 301836
+    driver-class-name: org.postgresql.Driver
+  chunk:
+    max-chars: 1200
+    overlap-chars: 150
+    min-chars: 80
+  embedding:
+    provider: aliyun-bailian
+    api-mode: openai-compatible
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api-key: sk-c5e08c4a48354a9489bebd11810a229a
+    model: text-embedding-v4
+    dimensions: 1024
+    batch-size: 16
+    connect-timeout: 10000
+    read-timeout: 60000
+  task:
+    enabled: true
+    fixed-delay: 10000
+    batch-size: 3
+    max-running: 2
+  lifecycle:
+    enabled: true
+  chat:
+    provider: aliyun-bailian
+    api-mode: openai-compatible
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api-key: ${DASHSCOPE_API_KEY:}
+    model: qwen-plus

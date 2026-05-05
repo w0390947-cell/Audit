@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditVectorTaskMapper">
+
+    <resultMap type="AuditVectorTask" id="AuditVectorTaskResult">
+        <id property="taskId" column="task_id"/>
+        <result property="resourceId" column="resource_id"/>
+        <result property="taskType" column="task_type"/>
+        <result property="taskStatus" column="task_status"/>
+        <result property="retryCount" column="retry_count"/>
+        <result property="maxRetry" column="max_retry_count"/>
+        <result property="progressText" column="progress_text"/>
+        <result property="errorMsg" column="error_msg"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="selectAuditVectorTaskVo">
+        select task_id, resource_id, task_type, task_status, retry_count, max_retry_count, progress_text,
+               error_msg, create_by, create_time, update_time
+        from audit_vector_task
+    </sql>
+
+    <select id="selectAuditVectorTaskById" parameterType="Long" resultMap="AuditVectorTaskResult">
+        <include refid="selectAuditVectorTaskVo"/>
+        where task_id = #{taskId}
+        limit 1
+    </select>
+
+    <select id="selectLatestAuditVectorTaskByResourceId" parameterType="Long" resultMap="AuditVectorTaskResult">
+        <include refid="selectAuditVectorTaskVo"/>
+        where resource_id = #{resourceId}
+        order by create_time desc, task_id desc
+        limit 1
+    </select>
+
+    <select id="selectPendingAuditVectorTasks" resultMap="AuditVectorTaskResult">
+        <include refid="selectAuditVectorTaskVo"/>
+        where task_status = 'pending'
+        order by create_time asc, task_id asc
+        limit #{batchSize}
+    </select>
+
+    <select id="countActiveTaskByResourceId" resultType="int">
+        select count(1)
+        from audit_vector_task
+        where resource_id = #{resourceId}
+          and task_status in ('pending', 'running')
+    </select>
+
+    <select id="selectLatestFailedTask" resultMap="AuditVectorTaskResult">
+        <include refid="selectAuditVectorTaskVo"/>
+        where resource_id = #{resourceId}
+          and task_type = #{taskType}
+          and task_status = 'failed'
+        order by update_time desc, task_id desc
+        limit 1
+    </select>
+
+    <select id="countRunningTasks" resultType="int">
+        select count(1)
+        from audit_vector_task
+        where task_status = 'running'
+    </select>
+
+    <insert id="insertAuditVectorTask" parameterType="AuditVectorTask" useGeneratedKeys="true" keyProperty="taskId">
+        insert into audit_vector_task
+        (resource_id, task_type, task_status, retry_count, max_retry_count, progress_text, error_msg,
+         create_by, create_time, update_time)
+        values
+        (#{resourceId}, #{taskType}, #{taskStatus}, #{retryCount}, #{maxRetry}, #{progressText}, #{errorMsg},
+         #{createBy}, now(), now())
+    </insert>
+
+    <update id="markTaskRunning">
+        update audit_vector_task
+        set task_status = 'running',
+            progress_text = '正在执行向量化任务',
+            error_msg = null,
+            update_time = now()
+        where task_id = #{taskId}
+          and task_status = 'pending'
+    </update>
+
+    <update id="markTaskSuccess">
+        update audit_vector_task
+        set task_status = 'success',
+            progress_text = '向量入库完成',
+            error_msg = null,
+            update_time = now()
+        where task_id = #{taskId}
+    </update>
+
+    <update id="markTaskSkipped">
+        update audit_vector_task
+        set task_status = 'skipped',
+            progress_text = '文件未变化，跳过向量化',
+            error_msg = #{errorMsg},
+            update_time = now()
+        where task_id = #{taskId}
+    </update>
+
+    <update id="markTaskFailed">
+        update audit_vector_task
+        set task_status = 'failed',
+            retry_count = ifnull(retry_count, 0) + 1,
+            progress_text = '向量入库失败',
+            error_msg = #{errorMsg},
+            update_time = now()
+        where task_id = #{taskId}
+    </update>
+
+    <update id="cancelPendingTasksByResourceIds">
+        update audit_vector_task
+        set task_status = 'cancelled',
+            progress_text = '文件已删除，任务已取消',
+            error_msg = null,
+            update_time = now()
+        where task_status = 'pending'
+          and resource_id in
+        <foreach item="resourceId" collection="resourceIds" open="(" separator="," close=")">
+            #{resourceId}
+        </foreach>
+    </update>
+
+    <update id="resetTaskPending">
+        update audit_vector_task
+        set task_status = 'pending',
+            progress_text = #{progressText},
+            error_msg = null,
+            update_time = now()
+        where task_id = #{taskId}
+    </update>
+</mapper>

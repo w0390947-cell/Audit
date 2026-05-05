@@ -1,10 +1,13 @@
 package com.ruoyi.system.service.audit.impl;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.utils.StringUtils;
@@ -14,12 +17,16 @@ import com.ruoyi.system.domain.audit.AuditLibraryFolder;
 import com.ruoyi.system.domain.audit.AuditTaskResource;
 import com.ruoyi.system.mapper.audit.AuditLibraryMapper;
 import com.ruoyi.system.service.audit.IAuditLibraryService;
+import com.ruoyi.system.service.audit.vector.AuditVectorLifecycleService;
 
 @Service
 public class AuditLibraryServiceImpl implements IAuditLibraryService
 {
     @Autowired
     private AuditLibraryMapper auditLibraryMapper;
+
+    @Autowired
+    private ObjectProvider<AuditVectorLifecycleService> auditVectorLifecycleServiceProvider;
 
     @Override
     public List<AuditLibraryFolder> selectAuditLibraryFolderList(AuditLibraryFolder folder)
@@ -79,10 +86,20 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     {
         Set<Long> descendantIds = collectDescendantFolderIds(folderIds);
         Long[] allFolderIds = descendantIds.toArray(new Long[0]);
+        List<Long> resourceIds = auditLibraryMapper.selectAuditCommonResourceIdsByFolderIds(allFolderIds);
         auditLibraryMapper.deleteAuditCommonResourceVersionByFolderIds(allFolderIds);
         auditLibraryMapper.deleteAuditCommonResourceByFolderIds(allFolderIds);
         auditLibraryMapper.deleteAuditTaskResourceByFolderIds(allFolderIds);
-        return auditLibraryMapper.deleteAuditLibraryFolderByIds(allFolderIds);
+        int rows = auditLibraryMapper.deleteAuditLibraryFolderByIds(allFolderIds);
+        if (rows > 0)
+        {
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourcesDeleted(resourceIds);
+            }
+        }
+        return rows;
     }
 
     @Override
@@ -127,6 +144,11 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             version.setCreator(resource.getCreator());
             version.setCreateTime(resource.getLatestModifyTime());
             auditLibraryMapper.insertAuditCommonResourceVersion(version);
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourceCreated(resource);
+            }
         }
         return rows;
     }
@@ -157,6 +179,12 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             version.setCreator(StringUtils.defaultIfBlank(resource.getCreator(), detail.getCreator()));
             version.setCreateTime(resource.getLatestModifyTime());
             auditLibraryMapper.insertAuditCommonResourceVersion(version);
+            AuditCommonResource after = auditLibraryMapper.selectAuditCommonResourceById(resource.getResourceId());
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourceUpdated(detail, after);
+            }
         }
         return rows;
     }
@@ -164,7 +192,16 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public int assignAuditCommonResourceFolder(AuditCommonResource resource)
     {
-        return auditLibraryMapper.updateAuditCommonResourceFolder(resource);
+        int rows = auditLibraryMapper.updateAuditCommonResourceFolder(resource);
+        if (rows > 0)
+        {
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourceMoved(resource.getResourceId(), resource.getFolderId());
+            }
+        }
+        return rows;
     }
 
     @Override
@@ -178,7 +215,16 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     public int deleteAuditCommonResourceByIds(Long[] resourceIds)
     {
         auditLibraryMapper.deleteAuditCommonResourceVersionByResourceIds(resourceIds);
-        return auditLibraryMapper.deleteAuditCommonResourceByIds(resourceIds);
+        int rows = auditLibraryMapper.deleteAuditCommonResourceByIds(resourceIds);
+        if (rows > 0)
+        {
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourcesDeleted(new ArrayList<>(Arrays.asList(resourceIds)));
+            }
+        }
+        return rows;
     }
 
     @Override

@@ -7,6 +7,72 @@
       </div>
     </div>
 
+    <div class="review-detail-blocks">
+      <div class="section-card">
+        <div class="section-title">审核基础信息</div>
+        <table class="info-table">
+          <tbody>
+            <tr>
+              <th>任务编号</th>
+              <td>{{ reviewDetail.taskNo || 'SF-16542598454' }}</td>
+              <th>产品名称</th>
+              <td>{{ reviewDetail.productName || '产品名称1' }}</td>
+            </tr>
+            <tr>
+              <th>送检单位</th>
+              <td>{{ reviewDetail.deliveryUnit || '送检单位1' }}</td>
+              <th>上传时间</th>
+              <td>{{ parseTime(reviewDetail.submitTime, '{y}-{m}-{d} {h}:{i}:{s}') || '2025-12-28 06:28:34' }}</td>
+            </tr>
+            <tr>
+              <th>AI分析次数</th>
+              <td>{{ reviewDetail.aiAnalysisCount || 3 }}</td>
+              <th>任务状态</th>
+              <td>
+                <dict-tag v-if="reviewDetail.taskStatus" :options="dict.type.audit_review_task_status" :value="reviewDetail.taskStatus" />
+                <span v-else class="status-chip warning">已上传</span>
+              </td>
+            </tr>
+            <tr>
+              <th>发起人</th>
+              <td>{{ reviewDetail.sponsor || '发起人1' }}</td>
+              <th>审核进度</th>
+              <td>
+                <dict-tag v-if="reviewDetail.reviewStatus" :options="dict.type.audit_review_status" :value="reviewDetail.reviewStatus" />
+                <span v-else class="status-chip success">审核通过</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-card">
+        <div class="section-title">流转状态</div>
+        <div class="stage-section">
+          <div class="stage-line" />
+          <div v-for="(item, index) in displayStageList" :key="item.stageId || index" class="stage-item">
+            <div class="stage-node">{{ index + 1 }}</div>
+            <div class="stage-name-row">
+              <span class="stage-name">{{ item.stageName || defaultStageName(index, item) }}</span>
+              <i class="el-icon-success stage-status-icon" />
+              <span class="stage-status-text">已完成</span>
+            </div>
+            <div class="stage-time">{{ stageTimeText(item, index) }}</div>
+            <div class="stage-card">
+              <div class="stage-card-head">
+                <span>{{ item.stageSummary || defaultStageSummary(item) }}</span>
+                <el-button type="text" class="stage-log-btn">处理日志</el-button>
+              </div>
+              <div v-for="(line, lineIndex) in stageLines(item)" :key="'stage_' + index + '_' + lineIndex" class="stage-card-line">
+                {{ line }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <div class="detail-grid">
       <div class="preview-column">
         <div class="section-card">
@@ -34,54 +100,17 @@
 
       <div class="side-column">
         <div class="section-card">
-          <div class="section-title">关联信息区</div>
-          <table class="info-table">
-            <tbody>
-              <tr>
-                <th>任务编号</th>
-                <td>{{ detail.taskNo || '--' }}</td>
-                <th>产品名称</th>
-                <td>{{ detail.productName || '--' }}</td>
-              </tr>
-              <tr>
-                <th>送检单位</th>
-                <td>{{ detail.deliveryUnit || '--' }}</td>
-                <th>提交人</th>
-                <td>{{ detail.submitter || '--' }}</td>
-              </tr>
-              <tr>
-                <th>AI分析次数</th>
-                <td>{{ detail.aiAnalysisCount || 0 }}</td>
-                <th>任务审核状态</th>
-                <td>
-                  <dict-tag :options="dict.type.audit_review_status" :value="detail.reviewStatus" />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">报告预览区</div>
-          <div class="file-card">
-            <div class="file-main">
-              <i class="el-icon-document file-icon" />
-              <div class="file-text">
-                <div class="file-name">{{ detail.reportFileName || '煤科院煤炭产品质量检测报告.pdf' }}</div>
-                <div class="file-meta">2.4 MB　创建时间：{{ reportTimeText }}</div>
+          <div class="section-title">检测结果</div>
+          <div>
+            <div v-for="(item, index) in displayIssueList" :key="item.issueId || index" class="issue-card">
+              <div class="issue-title" :class="{ 'format': index > 0 }">
+                <i class="el-icon-warning" />
+                <span>{{ item.issueTitle || '识别异常类型' }}</span>
+              </div>
+              <div v-for="(line, lineIndex) in issueLines(item)" :key="'issue_' + index + '_' + lineIndex" class="issue-line">
+                {{ line }}
               </div>
             </div>
-            <el-button type="text" class="download-btn" @click="downloadReport">
-              <i class="el-icon-upload2" />
-              <span>下载</span>
-            </el-button>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">AI关键发现区</div>
-          <div v-for="(row, index) in findingRows" :key="'finding_' + index" class="finding-row">
-            {{ row }}
           </div>
         </div>
 
@@ -106,10 +135,11 @@
 
 <script>
 import { getAiReportPreview, getAiTask, reviewAiTask } from '@/api/audit/ai'
+import { getReview } from '@/api/audit/review'
 
 export default {
   name: 'AuditAiDetail',
-  dicts: ['audit_review_status'],
+  dicts: ['audit_review_task_status', 'audit_review_status'],
   data() {
     return {
       loading: true,
@@ -118,6 +148,11 @@ export default {
       previewError: '',
       detail: {
         findingList: []
+      },
+      reviewDetail: {
+        stageList: [],
+        issueList: [],
+        versionList: []
       },
       reviewForm: {
         reviewOpinion: ''
@@ -128,9 +163,6 @@ export default {
     currentAiTaskId() {
       const aiTaskId = Number(this.$route.params.aiTaskId)
       return Number.isFinite(aiTaskId) && aiTaskId > 0 ? aiTaskId : null
-    },
-    reportTimeText() {
-      return this.parseTime(this.detail.submitTime, '{y}-{m}-{d}-{h}:{i}') || '2025-06-17-12:28'
     },
     previewReady() {
       return !!(this.previewInfo && this.previewInfo.previewFileUrl)
@@ -153,17 +185,17 @@ export default {
       }
       return '暂无可预览报告'
     },
-    findingRows() {
-      if (Array.isArray(this.detail.findingList) && this.detail.findingList.length) {
-        return this.detail.findingList.map(item => item.findingContent || item.findingTitle || '--')
+    displayStageList() {
+      if (Array.isArray(this.reviewDetail.stageList) && this.reviewDetail.stageList.length) {
+        return this.reviewDetail.stageList
       }
-      if (this.detail.aiSummary) {
-        return [this.detail.aiSummary, this.detail.aiSummary]
+      return this.defaultStageList()
+    },
+    displayIssueList() {
+      if (Array.isArray(this.reviewDetail.issueList) && this.reviewDetail.issueList.length) {
+        return this.reviewDetail.issueList
       }
-      return [
-        '本次报告经 AI 核查，发现存在内容缺失、格式错误两类问题，具体汇总如下，对应报告中相关标注位置，便于整改完善：',
-        '本次报告经 AI 核查，发现存在内容缺失、格式错误两类问题，具体汇总如下，对应报告中相关标注位置，便于整改完善：'
-      ]
+      return this.defaultIssueList()
     }
   },
   created() {
@@ -189,13 +221,38 @@ export default {
       this.loading = true
       this.previewInfo = null
       this.previewError = ''
+      this.reviewDetail = {
+        stageList: [],
+        issueList: [],
+        versionList: []
+      }
       getAiTask(this.currentAiTaskId).then(response => {
         this.detail = response.data || { findingList: [] }
         this.reviewForm.reviewOpinion = this.detail.reviewOpinion || ''
-        this.loading = false
+        this.getReviewDetail().then(() => {
+          this.loading = false
+        })
         this.getPreview()
       }).catch(() => {
         this.loading = false
+      })
+    },
+    getReviewDetail() {
+      if (!this.detail.reviewTaskId) {
+        return Promise.resolve()
+      }
+      return getReview(this.detail.reviewTaskId).then(response => {
+        this.reviewDetail = response.data || {
+          stageList: [],
+          issueList: [],
+          versionList: []
+        }
+      }).catch(() => {
+        this.reviewDetail = {
+          stageList: [],
+          issueList: [],
+          versionList: []
+        }
       })
     },
     goBack() {
@@ -234,6 +291,125 @@ export default {
       } catch (e) {
         return url
       }
+    },
+    splitStructuredText(text) {
+      if (!text) {
+        return []
+      }
+      return String(text)
+        .replace(/\n/g, '；')
+        .split('；')
+        .map(item => item.trim())
+        .filter(Boolean)
+    },
+    defaultStageList() {
+      return [
+        {
+          stageCode: 'upload',
+          stageName: '报告上传',
+          stageTime: '2024-06-01 14:35:00'
+        },
+        {
+          stageCode: 'parse',
+          stageName: '报告解析',
+          stageTime: '2024-06-01 14:37:00'
+        },
+        {
+          stageCode: 'detect',
+          stageName: '报告检测',
+          stageTime: '2024-06-01 14:39:00'
+        }
+      ]
+    },
+    defaultIssueList() {
+      return [
+        {
+          issueType: '数据错误',
+          issueTitle: '识别异常类型：数据错误'
+        },
+        {
+          issueType: '格式不规范',
+          issueTitle: '识别异常类型：格式不规范'
+        }
+      ]
+    },
+    defaultStageName(index, item) {
+      if (item && item.stageCode === 'upload') {
+        return '报告上传'
+      }
+      if (item && item.stageCode === 'parse') {
+        return '报告解析'
+      }
+      if (item && item.stageCode === 'detect') {
+        return '报告检测'
+      }
+      return ['报告上传', '报告解析', '报告检测'][index] || '--'
+    },
+    defaultStageSummary(item) {
+      const stageCode = item && item.stageCode
+      if (stageCode === 'upload') {
+        return '对应智能体-文件校验智能体'
+      }
+      if (stageCode === 'parse') {
+        return '对应智能体-预处理智能体'
+      }
+      return '对应智能体：比对智能体 + 检测结果智能体'
+    },
+    stageLines(item) {
+      const lines = this.splitStructuredText(item.stageDetail)
+      if (lines.length > 1) {
+        return lines
+      }
+      if (item.stageCode === 'upload') {
+        return [
+          '① 格式校验：检测文件为 PDF，符合要求',
+          '② 大小校验：文件大小 2.3MB，<5MB 限制',
+          '③ 存储校验：已成功存入 MinIO，路径：xxx'
+        ]
+      }
+      if (item.stageCode === 'parse') {
+        return [
+          '① 格式转换：已将 PDF 转为 JSON 结构化格式',
+          '② 字段提取：提取 12 个核心字段（防爆等级、检测日期等）',
+          '③ 摘要生成：已生成报告摘要，字数 120 字'
+        ]
+      }
+      return [
+        '① 比对智能体：已完成报告与依据文件的 10 个字段比对，发现 2 处不一致',
+        '② 检测结果智能体：“识别异常类型：数据错误 + 格式不规范，生成 4 条整改建议”'
+      ]
+    },
+    issueLines(item) {
+      const lines = this.splitStructuredText(item.issueContent)
+      if (lines.length > 1) {
+        return lines
+      }
+      if (item.issueType === '数据错误' || (item.issueTitle || '').indexOf('数据错误') > -1) {
+        return [
+          '① ' + (item.issueContent || '报告第 3 页表 3-1 中“防爆等级”填写为 “Exd II BT4”，与依据文件要求不一致'),
+          '② 报告第 7 页“额定电流”填写为“50A”，与辅助材料（检测记录）中记录的“60A”存在偏差'
+        ]
+      }
+      return [
+        '① ' + (item.issueContent || '报告第 5 页“检测日期”格式为 “2024/06/01”，未按审核模板要求的 “YYYY-MM-DD” 标准格式填写'),
+        '② 报告第 10 页“检测人员签字”栏位未填写，且缺少审核人员签字确认'
+      ]
+    },
+    stageTimeText(item, index) {
+      const current = this.toDate(item.stageTime)
+      if (!current) {
+        return '--'
+      }
+      const nextStage = this.displayStageList[index + 1]
+      const next = this.toDate(nextStage && nextStage.stageTime) || new Date(current.getTime() + 60 * 1000)
+      return this.parseTime(current, '{y}-{m}-{d} {h}:{i}') + '-' + this.parseTime(next, '{h}:{i}')
+    },
+    toDate(value) {
+      if (!value) {
+        return null
+      }
+      const date = new Date(value)
+      return Number.isNaN(date.getTime()) ? null : date
     },
     submitDecision(reviewStatus) {
       const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId
@@ -288,6 +464,39 @@ export default {
   color: #409eff;
   font-size: 18px;
   cursor: pointer;
+}
+
+.review-detail-blocks {
+  .info-table {
+    th {
+      width: 12%;
+    }
+
+    td {
+      width: 38%;
+    }
+  }
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.status-chip.warning {
+  color: #e6a23c;
+  background: #fef4e8;
+  border: 1px solid #fbe7c6;
+}
+
+.status-chip.success {
+  color: #67c23a;
+  background: #edf9e8;
+  border: 1px solid #d8f0ca;
 }
 
 .detail-grid {
@@ -385,67 +594,123 @@ export default {
   }
 }
 
-.file-card {
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  padding: 12px 14px;
+.stage-section {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  padding-top: 24px;
+}
+
+.stage-line {
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  top: 40px;
+  border-top: 2px solid #4a96e9;
+}
+
+.stage-item {
+  position: relative;
+  z-index: 1;
+}
+
+.stage-node {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  border: 2px solid #4a96e9;
+  background: #fff;
+  color: #4a96e9;
+  font-size: 16px;
+  line-height: 30px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.stage-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.stage-name {
+  color: #303133;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.stage-status-icon,
+.stage-status-text {
+  color: #4a96e9;
+  font-size: 13px;
+}
+
+.stage-time {
+  margin: 10px 0 12px;
+  color: #909399;
+  font-size: 13px;
+  text-align: center;
+}
+
+.stage-card {
+  background: #f7f9fb;
+  border: 1px solid #edf1f6;
+  padding: 14px 14px 12px;
+  min-height: 136px;
+}
+
+.stage-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-
-.file-main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex: 1;
-}
-
-.file-icon {
-  color: #409eff;
-  font-size: 22px;
-}
-
-.file-text {
-  min-width: 0;
-}
-
-.file-name {
+  gap: 8px;
   color: #303133;
   font-size: 14px;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
+  margin-bottom: 8px;
 }
 
-.file-meta {
-  margin-top: 6px;
-  color: #909399;
-  font-size: 12px;
-}
-
-.download-btn {
+.stage-log-btn {
   padding: 0;
-  color: #409eff;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  font-size: 13px;
 }
 
-.finding-row {
-  background: #f7f9fb;
-  border: 1px solid #f0f2f5;
+.stage-card-line {
   color: #606266;
-  font-size: 14px;
-  line-height: 1.8;
-  padding: 14px 16px;
+  font-size: 12px;
+  line-height: 1.9;
 }
 
-.finding-row + .finding-row {
-  margin-top: 12px;
+.issue-card {
+  border: 1px solid #ebeef5;
+  padding: 14px 16px 12px;
+}
+
+.issue-card + .issue-card {
+  margin-top: 10px;
+}
+
+.issue-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f56c6c;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.issue-title.format {
+  color: #f56c6c;
+}
+
+.issue-line {
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.9;
 }
 
 .decision-actions {
@@ -461,6 +726,16 @@ export default {
 }
 
 @media (max-width: 1480px) {
+  .stage-section {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding-top: 0;
+  }
+
+  .stage-line {
+    display: none;
+  }
+
   .detail-grid {
     flex-direction: column;
   }

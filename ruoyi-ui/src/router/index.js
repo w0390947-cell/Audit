@@ -63,8 +63,20 @@ export const constantRoutes = [
   },
   {
     path: '/',
-    redirect: '/audit/review',
+    redirect: '/home',
     hidden: true
+  },
+  {
+    path: '/home',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        component: () => import('@/views/home/index.vue'),
+        name: 'Home',
+        meta: { title: '首页', icon: 'dashboard' }
+      }
+    ]
   },
   {
     path: '/lock',

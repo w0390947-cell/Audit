@@ -230,11 +230,108 @@
         <el-button type="primary" @click="historyOpen = false">确定</el-button>
       </div>
     </el-dialog>
+
+    <el-dialog
+      title="从审核文件库选择"
+      :visible.sync="libraryOpen"
+      width="880px"
+      append-to-body
+      class="library-picker-dialog"
+    >
+      <div class="library-picker" v-loading="libraryLoading">
+        <div class="picker-head">
+          <el-breadcrumb separator="/">
+            <el-breadcrumb-item>
+              <span
+                :class="{ 'breadcrumb-link': currentLibraryFolder }"
+                @click="leaveLibraryFolder"
+              >审核文件库</span>
+            </el-breadcrumb-item>
+            <el-breadcrumb-item v-if="currentLibraryFolder">{{ currentLibraryFolder.folderName }}</el-breadcrumb-item>
+          </el-breadcrumb>
+          <div class="selected-count">已选择 {{ selectedLibraryFileList.length }} 个文件</div>
+        </div>
+
+        <div class="library-search-bar">
+          <el-input
+            v-model.trim="libraryKeyword"
+            clearable
+            prefix-icon="el-icon-search"
+            :placeholder="currentLibraryFolder ? '请输入文件名称搜索' : '请输入文件名称全局搜索'"
+          />
+        </div>
+
+        <div v-if="!currentLibraryFolder && !libraryKeyword" class="picker-folder-grid">
+          <div
+            v-for="item in libraryFolders"
+            :key="item.folderId"
+            class="picker-folder-card"
+            @click="enterLibraryFolder(item)"
+          >
+            <div class="picker-folder-icon">
+              <span class="folder-top" />
+              <span class="folder-line" />
+              <span class="folder-body" />
+            </div>
+            <div class="picker-folder-name">{{ item.folderName }}</div>
+            <div class="picker-folder-count">{{ item.fileCount || 0 }} 个文件</div>
+          </div>
+          <el-empty v-if="!libraryFolders.length && !libraryLoading" description="暂无文件夹" :image-size="100" />
+        </div>
+
+        <div v-else>
+          <el-table
+            ref="libraryResourceTable"
+            v-loading="resourceLoading"
+            :data="filteredLibraryResources"
+            row-key="pickerKey"
+            class="library-resource-table"
+            @select="handleLibrarySelect"
+            @select-all="handleLibrarySelectAll"
+          >
+            <el-table-column type="selection" width="55" align="center" :selectable="isLibraryFileSelectable" />
+            <el-table-column label="类型" width="90" align="center">
+              <template slot-scope="scope">
+                <el-tag size="small" :type="scope.row.resourceType === 'common' ? 'success' : 'primary'">
+                  {{ scope.row.resourceType === 'common' ? '常用文件' : '任务文件' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="文件名称" prop="displayName" min-width="200" show-overflow-tooltip />
+            <el-table-column label="所属文件夹" prop="folderName" width="140" show-overflow-tooltip>
+              <template slot-scope="scope">{{ scope.row.folderName || '--' }}</template>
+            </el-table-column>
+            <el-table-column label="文件大小" prop="fileSize" width="90" align="center">
+              <template slot-scope="scope">{{ scope.row.fileSize || '--' }}</template>
+            </el-table-column>
+            <el-table-column label="状态" prop="statusText" width="100" align="center" />
+            <el-table-column label="更新时间" width="150" align="center">
+              <template slot-scope="scope">{{ parseTime(scope.row.displayTime) || '--' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center">
+              <template slot-scope="scope">
+                <el-button type="text" size="mini" :disabled="!scope.row.fileUrl" @click="openLibraryFile(scope.row.fileUrl)">预览</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty
+            v-if="!resourceLoading && !filteredLibraryResources.length"
+            :description="libraryKeyword ? '未找到匹配文件' : '当前文件夹暂无文件'"
+            :image-size="100"
+          />
+        </div>
+      </div>
+      <div slot="footer" class="dialog-footer">
+        <el-button @click="libraryOpen = false">取消</el-button>
+        <el-button type="primary" @click="confirmLibrarySelection">确定</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import FileUpload from '@/components/FileUpload'
+import { listCommonResource, listLibraryFolders, listTaskResource } from '@/api/audit/library'
 import {
   addReview,
   changeReviewProcessFlag,
@@ -260,8 +357,17 @@ export default {
       open: false,
       historyOpen: false,
       historyLoading: false,
+      libraryOpen: false,
+      libraryLoading: false,
+      resourceLoading: false,
       title: '',
       historyList: [],
+      libraryFolders: [],
+      currentLibraryFolder: null,
+      libraryResources: [],
+      libraryKeyword: '',
+      libraryGlobalLoaded: false,
+      selectedLibraryFiles: {},
       queryParams: {
         pageNum: 1,
         pageSize: 10,
@@ -281,6 +387,29 @@ export default {
         ],
         mainReportUrls: []
       }
+    }
+  },
+  computed: {
+    selectedLibraryFileList() {
+      return Object.values(this.selectedLibraryFiles)
+    },
+    filteredLibraryResources() {
+      const keyword = this.libraryKeyword.trim().toLowerCase()
+      if (!keyword) {
+        return this.libraryResources
+      }
+      return this.libraryResources.filter(item => {
+        const name = String(item.displayName || item.fileName || '').toLowerCase()
+        return name.includes(keyword)
+      })
+    }
+  },
+  watch: {
+    libraryKeyword() {
+      if (!this.currentLibraryFolder && this.libraryKeyword && !this.libraryGlobalLoaded && !this.resourceLoading) {
+        this.getLibraryResources()
+      }
+      this.$nextTick(this.syncLibraryTableSelection)
     }
   },
   created() {
@@ -400,7 +529,170 @@ export default {
       })
     },
     handleSelectFromLibrary() {
-      this.$message.info('请在审核文件库中选择目标文件后回填到当前任务')
+      this.libraryOpen = true
+      this.currentLibraryFolder = null
+      this.libraryResources = []
+      this.libraryKeyword = ''
+      this.libraryGlobalLoaded = false
+      this.selectedLibraryFiles = {}
+      this.getLibraryFolders()
+    },
+    getLibraryFolders() {
+      this.libraryLoading = true
+      listLibraryFolders().then(response => {
+        this.libraryFolders = response.data || []
+        this.libraryLoading = false
+      }).catch(() => {
+        this.libraryFolders = []
+        this.libraryLoading = false
+      })
+    },
+    enterLibraryFolder(folder) {
+      this.currentLibraryFolder = folder
+      this.libraryKeyword = ''
+      this.libraryGlobalLoaded = false
+      this.getLibraryResources(folder)
+    },
+    leaveLibraryFolder() {
+      if (!this.currentLibraryFolder) {
+        return
+      }
+      this.currentLibraryFolder = null
+      this.libraryResources = []
+      this.libraryKeyword = ''
+      this.libraryGlobalLoaded = false
+    },
+    getLibraryResources(folder) {
+      const queryParams = { pageNum: 1, pageSize: 999 }
+      if (folder && folder.folderId) {
+        queryParams.folderId = folder.folderId
+      }
+      this.resourceLoading = true
+      Promise.all([
+        listCommonResource(queryParams),
+        listTaskResource(queryParams)
+      ]).then(([commonResponse, taskResponse]) => {
+        const commonRows = (commonResponse.rows || []).map(item => ({
+          pickerKey: 'common_' + item.resourceId,
+          resourceType: 'common',
+          resourceId: item.resourceId,
+          displayName: item.documentName || item.fileName || this.getFileNameFromUrl(item.fileUrl),
+          fileName: item.fileName || item.documentName || this.getFileNameFromUrl(item.fileUrl),
+          folderName: item.folderName,
+          fileUrl: item.fileUrl,
+          fileSize: item.fileSize,
+          statusText: this.commonStatusLabel(item.storageStatus),
+          displayTime: item.latestModifyTime || item.updateTime || item.createTime
+        }))
+        const taskRows = (taskResponse.rows || []).map(item => ({
+          pickerKey: 'task_' + item.resourceId,
+          resourceType: 'task',
+          resourceId: item.resourceId,
+          displayName: item.fileName || this.getFileNameFromUrl(item.previewFileUrl),
+          fileName: item.fileName || this.getFileNameFromUrl(item.previewFileUrl),
+          folderName: item.folderName,
+          fileUrl: item.previewFileUrl,
+          fileSize: '',
+          statusText: this.taskStatusLabel(item.collectStatus),
+          displayTime: item.archiveTime || item.updateTime || item.createTime
+        }))
+        this.libraryResources = commonRows.concat(taskRows)
+        this.libraryGlobalLoaded = !(folder && folder.folderId)
+        this.resourceLoading = false
+        this.$nextTick(this.syncLibraryTableSelection)
+      }).catch(() => {
+        this.libraryResources = []
+        this.libraryGlobalLoaded = !(folder && folder.folderId)
+        this.resourceLoading = false
+      })
+    },
+    handleLibrarySelect(selection, row) {
+      if (!row || !row.fileUrl) {
+        return
+      }
+      if (selection.some(item => item.pickerKey === row.pickerKey)) {
+        this.$set(this.selectedLibraryFiles, row.pickerKey, row)
+      } else {
+        this.$delete(this.selectedLibraryFiles, row.pickerKey)
+      }
+    },
+    handleLibrarySelectAll(selection) {
+      const selectionKeys = selection.map(item => item.pickerKey)
+      this.filteredLibraryResources.forEach(row => {
+        if (!row.fileUrl) {
+          return
+        }
+        if (selectionKeys.includes(row.pickerKey)) {
+          this.$set(this.selectedLibraryFiles, row.pickerKey, row)
+        } else {
+          this.$delete(this.selectedLibraryFiles, row.pickerKey)
+        }
+      })
+    },
+    syncLibraryTableSelection() {
+      if (!this.$refs.libraryResourceTable) {
+        return
+      }
+      this.$refs.libraryResourceTable.clearSelection()
+      this.filteredLibraryResources.forEach(row => {
+        if (this.selectedLibraryFiles[row.pickerKey]) {
+          this.$refs.libraryResourceTable.toggleRowSelection(row, true)
+        }
+      })
+    },
+    isLibraryFileSelectable(row) {
+      return !!(row && row.fileUrl)
+    },
+    confirmLibrarySelection() {
+      const selectedUrls = this.selectedLibraryFileList.map(item => item.fileUrl).filter(Boolean)
+      if (!selectedUrls.length) {
+        this.$message.warning('请选择文件')
+        return
+      }
+      const currentUrls = this.splitFileUrls(this.form.basisFileUrls)
+      const mergedUrls = Array.from(new Set(currentUrls.concat(selectedUrls)))
+      if (mergedUrls.length > 8) {
+        this.$message.warning('依据文件数量不能超过 8 个')
+        return
+      }
+      this.form.basisFileUrls = mergedUrls.join(',')
+      this.libraryOpen = false
+    },
+    splitFileUrls(fileUrls) {
+      if (!fileUrls) {
+        return []
+      }
+      return String(fileUrls).split(',').map(item => item.trim()).filter(Boolean)
+    },
+    getFileNameFromUrl(url) {
+      if (!url) {
+        return '--'
+      }
+      const cleanUrl = String(url).split('?')[0]
+      return decodeURIComponent(cleanUrl.substring(cleanUrl.lastIndexOf('/') + 1)) || cleanUrl
+    },
+    commonStatusLabel(status) {
+      if (status === 'stored') {
+        return '已入库'
+      }
+      if (status === 'failed') {
+        return '入库失败'
+      }
+      return '入库中'
+    },
+    taskStatusLabel(status) {
+      if (status === 'archived') {
+        return '已归档'
+      }
+      if (status === 'pending') {
+        return '待采集'
+      }
+      return '已采集'
+    },
+    openLibraryFile(fileUrl) {
+      if (fileUrl) {
+        window.open(encodeURI(fileUrl))
+      }
     },
     handleToggleStatus(row) {
       const nextFlag = row.processFlag === '1' ? '0' : '1'
@@ -594,6 +886,126 @@ export default {
 
 .upload-panel ::v-deep .upload-file-list .el-link--danger {
   color: #f56c6c;
+}
+
+.library-picker {
+  min-height: 420px;
+}
+
+.library-picker-dialog ::v-deep .el-dialog__body {
+  padding: 16px 20px 8px !important;
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.breadcrumb-link {
+  color: #409eff;
+  cursor: pointer;
+}
+
+.selected-count {
+  color: #606266;
+  font-size: 13px;
+}
+
+.picker-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.picker-folder-card {
+  height: 150px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.picker-folder-card:hover {
+  border-color: #c6e2ff;
+  background: #f5faff;
+}
+
+.picker-folder-icon {
+  position: relative;
+  width: 78px;
+  height: 58px;
+  margin-bottom: 12px;
+}
+
+.folder-top {
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  width: 28px;
+  height: 11px;
+  background: #f4c45f;
+  border-radius: 4px 4px 0 0;
+}
+
+.folder-line {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 18px;
+  height: 9px;
+  background: #ffd773;
+  border-radius: 4px 4px 0 0;
+}
+
+.folder-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38px;
+  background: #f6c453;
+  border-radius: 4px;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.04);
+}
+
+.picker-folder-name {
+  max-width: 120px;
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-folder-count {
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
+}
+
+.library-search-bar {
+  margin-bottom: 12px;
+  width: 320px;
+}
+
+.library-resource-table {
+  border: 1px solid #ebeef5;
+}
+
+.library-resource-table ::v-deep th.el-table__cell {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
 }
 
 .history-list {

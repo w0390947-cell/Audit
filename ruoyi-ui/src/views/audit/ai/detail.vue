@@ -101,7 +101,7 @@
       <div class="side-column">
         <div class="section-card">
           <div class="section-title">检测结果</div>
-          <div>
+          <div v-if="displayIssueList.length">
             <div v-for="(item, index) in displayIssueList" :key="item.issueId || index" class="issue-card">
               <div class="issue-title" :class="{ 'format': index > 0 }">
                 <i class="el-icon-warning" />
@@ -112,6 +112,7 @@
               </div>
             </div>
           </div>
+          <div v-else class="result-empty">暂无检测结果</div>
         </div>
 
         <div class="section-card">
@@ -192,10 +193,18 @@ export default {
       return this.defaultStageList()
     },
     displayIssueList() {
+      if (Array.isArray(this.detail.findingList) && this.detail.findingList.length) {
+        return this.detail.findingList.map(item => ({
+          issueId: item.findingId,
+          issueType: item.findingType,
+          issueTitle: this.formatFindingTitle(item),
+          issueContent: item.findingContent
+        }))
+      }
       if (Array.isArray(this.reviewDetail.issueList) && this.reviewDetail.issueList.length) {
         return this.reviewDetail.issueList
       }
-      return this.defaultIssueList()
+      return []
     }
   },
   created() {
@@ -321,17 +330,10 @@ export default {
         }
       ]
     },
-    defaultIssueList() {
-      return [
-        {
-          issueType: '数据错误',
-          issueTitle: '识别异常类型：数据错误'
-        },
-        {
-          issueType: '格式不规范',
-          issueTitle: '识别异常类型：格式不规范'
-        }
-      ]
+    formatFindingTitle(item) {
+      const type = item.findingType || '其他'
+      const title = item.findingTitle || 'AI发现问题'
+      return '识别异常类型：' + type + ' - ' + title
     },
     defaultStageName(index, item) {
       if (item && item.stageCode === 'upload') {
@@ -381,19 +383,10 @@ export default {
     },
     issueLines(item) {
       const lines = this.splitStructuredText(item.issueContent)
-      if (lines.length > 1) {
+      if (lines.length) {
         return lines
       }
-      if (item.issueType === '数据错误' || (item.issueTitle || '').indexOf('数据错误') > -1) {
-        return [
-          '① ' + (item.issueContent || '报告第 3 页表 3-1 中“防爆等级”填写为 “Exd II BT4”，与依据文件要求不一致'),
-          '② 报告第 7 页“额定电流”填写为“50A”，与辅助材料（检测记录）中记录的“60A”存在偏差'
-        ]
-      }
-      return [
-        '① ' + (item.issueContent || '报告第 5 页“检测日期”格式为 “2024/06/01”，未按审核模板要求的 “YYYY-MM-DD” 标准格式填写'),
-        '② 报告第 10 页“检测人员签字”栏位未填写，且缺少审核人员签字确认'
-      ]
+      return ['暂无问题描述']
     },
     stageTimeText(item, index) {
       const current = this.toDate(item.stageTime)
@@ -711,6 +704,15 @@ export default {
   color: #606266;
   font-size: 13px;
   line-height: 1.9;
+}
+
+.result-empty {
+  padding: 28px 0;
+  color: #909399;
+  font-size: 14px;
+  text-align: center;
+  border: 1px dashed #dcdfe6;
+  background: #fafbfc;
 }
 
 .decision-actions {

@@ -148,15 +148,15 @@ fastgpt:
   # FastGPT 总开关
   enabled: true
   # FastGPT OpenAPI 根地址
-  base-url: http://1.14.131.18:3000/api
+  base-url: http://localhost:3000/api
   # FastGPT 应用特定 API Key（通过环境变量注入）
-  api-key: fastgpt-dzvZyTshxxSOitssj4HvyAK5VwOnfDC2UZf3lWxNqImY2H59e65P
+  api-key: fastgpt-mmJ1RUXOWfyTT7WQWlFYlreAWph2qmACvVzdy3Yr3aSdfpEqT1ZpSWq5IpY
   # 带依据文件场景使用的 FastGPT 应用特定 API Key
-  basis-api-key: fastgpt-njpahN525sdXPHPRChwYayL4iqyUVc20UsxbB6F4GWkDjkoviXzLwENDdVni49
+  basis-api-key: fastgpt-iZMrQbNjcGlNepHEBRo0BXCDgCqPP8GpUt4hgMrCSce0Hn96DbFCRAIp5
   # 主报告正文预处理工作流使用的 FastGPT 应用特定 API Key
-  preprocess-api-key: fastgpt-mUP8jPwkJ7JbTcorJeoYHYy52qxpN9Oh8BuR0wLiPvwtAgYQJF05bY
+  preprocess-api-key: fastgpt-erHrfDKoveEt78GrrjRW96zhtSSShPYP3G7Op8WqTZAxwR6kqLw8Ur0nSqgnbYrfk
   # FastGPT 服务可访问的后端文件公开地址，用于将 /profile/... 转为完整 URL
-  public-file-base-url: https://5bf3-2409-8a3c-36b1-7510-265a-5fff-fe43-cfe3.ngrok-free.app
+  public-file-base-url: http://172.18.0.1:6039
   # 连接超时时间（毫秒）
   connect-timeout: 10000
   # 读取超时时间（毫秒）

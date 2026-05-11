@@ -95,6 +95,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="taskStatus != null and taskStatus != ''">
                 and task_status = #{taskStatus}
             </if>
+            <if test="reviewStatus != null and reviewStatus != ''">
+                and review_status = #{reviewStatus}
+            </if>
             <if test="params.beginSubmitTime != null and params.beginSubmitTime != ''">
                 and submit_time <![CDATA[ >= ]]> concat(#{params.beginSubmitTime}, ' 00:00:00')
             </if>

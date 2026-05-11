@@ -28,6 +28,9 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     @Autowired
     private AuditAiMapper auditAiMapper;
 
+    @Autowired
+    private AuditAiQueuePositionService auditAiQueuePositionService;
+
     @Override
     public List<AuditReviewTask> selectAuditReviewTaskList(AuditReviewTask task)
     {
@@ -128,7 +131,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         }
         if (StringUtils.isBlank(task.getReviewStatus()))
         {
-            task.setReviewStatus("pending");
+            task.setReviewStatus("reviewing");
         }
         if (StringUtils.isBlank(task.getProcessFlag()))
         {
@@ -282,7 +285,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         aiTask.setDeliveryUnit(reviewTask.getDeliveryUnit());
         aiTask.setSubmitter(reviewTask.getSponsor());
         aiTask.setPriority(reviewTask.getPriority());
-        aiTask.setQueuePosition(nextAiQueuePosition());
+        aiTask.setQueuePosition(auditAiQueuePositionService.nextQueuePosition());
         aiTask.setTaskStatus("waiting");
         aiTask.setEstimatedDuration("3分钟");
         aiTask.setProgressPercent(0);
@@ -298,20 +301,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         aiTask.setCreateBy(StringUtils.defaultString(reviewTask.getCreateBy(), reviewTask.getUpdateBy()));
         aiTask.setRemark("由审核列表任务自动创建");
         auditAiMapper.insertAuditAiTask(aiTask);
-    }
-
-    private int nextAiQueuePosition()
-    {
-        List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
-        int max = 0;
-        for (AuditAiTask task : list)
-        {
-            if (task.getQueuePosition() != null && task.getQueuePosition() > max)
-            {
-                max = task.getQueuePosition();
-            }
-        }
-        return max + 1;
+        auditAiQueuePositionService.resortQueuePositions(aiTask.getCreateBy());
     }
 
     private String buildAiSummary(AuditReviewTask task)

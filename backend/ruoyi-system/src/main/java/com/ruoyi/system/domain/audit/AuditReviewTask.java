@@ -29,10 +29,8 @@ public class AuditReviewTask extends BaseEntity
     @Excel(name = "优先级", dictType = "audit_review_priority")
     private String priority;
 
-    @Excel(name = "AI分析次数")
     private Integer aiAnalysisCount;
 
-    @Excel(name = "任务状态", dictType = "audit_review_task_status")
     private String taskStatus;
 
     @Excel(name = "审核状态", dictType = "audit_review_status")

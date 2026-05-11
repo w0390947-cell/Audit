@@ -12,10 +12,10 @@
           <i slot="prefix" class="el-input__icon el-icon-search" />
         </el-input>
       </el-form-item>
-      <el-form-item label="任务状态" prop="taskStatus">
-        <el-select v-model="queryParams.taskStatus" clearable placeholder="请选择任务状态" style="width: 220px">
+      <el-form-item label="审核状态" prop="reviewStatus">
+        <el-select v-model="queryParams.reviewStatus" clearable placeholder="请选择审核状态" style="width: 220px">
           <el-option
-            v-for="dict in dict.type.audit_review_task_status"
+            v-for="dict in dict.type.audit_review_status"
             :key="dict.value"
             :label="dict.label"
             :value="dict.value"
@@ -44,6 +44,14 @@
       <div />
       <div class="toolbar-actions">
         <el-button
+          size="small"
+          type="danger"
+          plain
+          @click="handleDelete()"
+          :disabled="multiple"
+          v-hasPermi="['audit:review:remove']"
+        >批量删除</el-button>
+        <el-button
           plain
           icon="el-icon-download"
           size="small"
@@ -60,7 +68,12 @@
       </div>
     </div>
 
-    <el-table v-loading="loading" :data="reviewList" class="review-table">
+    <el-table
+      v-loading="loading"
+      :data="reviewList"
+      class="review-table"
+      @selection-change="handleSelectionChange"
+    >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="任务编号" align="center" prop="taskNo" min-width="150" />
       <el-table-column label="产品名称" align="center" prop="productName" min-width="120" />
@@ -70,11 +83,10 @@
           <span>{{ parseTime(scope.row.submitTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="AI分析次数" align="center" prop="aiAnalysisCount" width="110" />
       <el-table-column label="发起人" align="center" prop="sponsor" width="110" />
-      <el-table-column label="任务状态" align="center" prop="taskStatus" width="110">
+      <el-table-column label="优先级" align="center" prop="priority" width="110">
         <template slot-scope="scope">
-          <dict-tag :options="dict.type.audit_review_task_status" :value="scope.row.taskStatus" />
+          <span :class="['priority-text', 'priority-' + scope.row.priority]">{{ priorityLabel(scope.row.priority) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="审核状态" align="center" prop="reviewStatus" width="110">
@@ -102,12 +114,6 @@
             @click="handleUpdate(scope.row)"
             v-hasPermi="['audit:review:edit']"
           >编辑</el-button>
-          <el-button
-            size="mini"
-            type="text"
-            @click="handleToggleStatus(scope.row)"
-            v-hasPermi="['audit:review:changeStatus']"
-          >{{ scope.row.processFlag === '1' ? '恢复' : '暂停' }}</el-button>
           <el-button
             size="mini"
             type="text"
@@ -347,7 +353,6 @@ import { ensureAiTaskByReviewTask } from '@/api/audit/ai'
 import { listCommonResource, listLibraryFolders, listTaskResource } from '@/api/audit/library'
 import {
   addReview,
-  changeReviewProcessFlag,
   delReview,
   getReview,
   listReview,
@@ -383,11 +388,13 @@ export default {
       libraryKeyword: '',
       libraryGlobalLoaded: false,
       selectedLibraryFiles: {},
+      ids: [],
+      multiple: true,
       queryParams: {
         pageNum: 1,
         pageSize: 10,
         keyword: undefined,
-        taskStatus: undefined
+        reviewStatus: undefined
       },
       form: {},
       rules: {
@@ -459,7 +466,7 @@ export default {
         mainReportUrls: '',
         basisFileUrls: '',
         appendixFileUrls: '',
-        reviewStatus: 'pending',
+        reviewStatus: 'reviewing',
         taskStatus: 'uploaded',
         processFlag: '0',
         remark: ''
@@ -753,27 +760,33 @@ export default {
       }
       return '已采集'
     },
+    priorityLabel(priority) {
+      if (priority === 'high') {
+        return '高优先级'
+      }
+      if (priority === 'medium') {
+        return '中优先级'
+      }
+      return '低优先级'
+    },
     openLibraryFile(fileUrl) {
       if (fileUrl) {
         window.open(encodeURI(fileUrl))
       }
     },
-    handleToggleStatus(row) {
-      const nextFlag = row.processFlag === '1' ? '0' : '1'
-      const actionText = nextFlag === '1' ? '暂停' : '恢复'
-      this.$modal.confirm('确认要' + actionText + '任务编号为“' + row.taskNo + '”的数据项吗？').then(() => {
-        return changeReviewProcessFlag({
-          taskId: row.taskId,
-          processFlag: nextFlag
-        })
-      }).then(() => {
-        this.$modal.msgSuccess(actionText + '成功')
-        this.getList()
-      }).catch(() => {})
+    handleSelectionChange(selection) {
+      this.ids = selection.map(item => item.taskId)
+      this.multiple = !selection.length
     },
     handleDelete(row) {
-      this.$modal.confirm('确认要删除任务编号为“' + row.taskNo + '”的数据项吗？').then(() => {
-        return delReview(row.taskId)
+      const taskIds = row ? [row.taskId] : this.ids
+      if (!taskIds.length) {
+        this.$message.warning('请先选择任务')
+        return
+      }
+      const message = row ? '确认要删除任务编号为“' + row.taskNo + '”的数据项吗？' : '是否确认删除所选审核任务？'
+      this.$modal.confirm(message).then(() => {
+        return delReview(taskIds.join(','))
       }).then(() => {
         this.$modal.msgSuccess('删除成功')
         this.getList()
@@ -844,6 +857,22 @@ export default {
 
 .delete-btn {
   color: #f56c6c;
+}
+
+.priority-text {
+  font-weight: 600;
+}
+
+.priority-high {
+  color: #409eff;
+}
+
+.priority-medium {
+  color: #41c3d9;
+}
+
+.priority-low {
+  color: #ffb44c;
 }
 
 .task-form {

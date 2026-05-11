@@ -159,6 +159,7 @@
               <el-button
                 size="mini"
                 type="text"
+                :disabled="!canChangeRowStatus(scope.row)"
                 @click="handleBatchStatus(scope.row.taskStatus === 'paused' ? 'waiting' : 'paused', scope.row)"
                 v-hasPermi="['audit:ai:changeStatus']"
               >{{ scope.row.taskStatus === 'paused' ? '恢复' : '暂停' }}</el-button>
@@ -362,6 +363,19 @@ export default {
         this.$message.warning('请先选择任务')
         return
       }
+      const selectedRows = row ? [row] : this.taskList.filter(item => this.ids.includes(item.aiTaskId))
+      if (taskStatus === 'paused' && selectedRows.some(item => item.taskStatus === 'executing')) {
+        this.$message.warning('执行中的任务正在被工作流处理，不能暂停')
+        return
+      }
+      if (taskStatus === 'paused' && selectedRows.some(item => item.taskStatus !== 'waiting')) {
+        this.$message.warning('只有等待中的任务可以暂停')
+        return
+      }
+      if (taskStatus === 'waiting' && selectedRows.some(item => item.taskStatus !== 'paused')) {
+        this.$message.warning('只有已暂停的任务可以恢复')
+        return
+      }
       const actionText = taskStatus === 'paused' ? '暂停' : '恢复'
       this.$modal.confirm('是否确认' + actionText + '选中的任务？').then(() => {
         return changeAiTaskStatus({
@@ -373,6 +387,9 @@ export default {
         this.getStats()
         this.getList()
       }).catch(() => {})
+    },
+    canChangeRowStatus(row) {
+      return row.taskStatus === 'waiting' || row.taskStatus === 'paused'
     },
     handleRaisePriority(row) {
       const aiTaskIds = row ? [row.aiTaskId] : this.ids

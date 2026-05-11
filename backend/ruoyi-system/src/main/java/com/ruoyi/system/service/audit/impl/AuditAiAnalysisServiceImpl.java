@@ -26,16 +26,19 @@ public class AuditAiAnalysisServiceImpl implements AuditAiAnalysisService
     private final IFastGptAuditService fastGptAuditService;
     private final IAuditWorkflowAuditService auditWorkflowAuditService;
     private final AuditAiAnalysisPersistenceService persistenceService;
+    private final AuditAiQueuePositionService auditAiQueuePositionService;
 
     public AuditAiAnalysisServiceImpl(AuditAiMapper auditAiMapper,
                                        IFastGptAuditService fastGptAuditService,
                                        IAuditWorkflowAuditService auditWorkflowAuditService,
-                                       AuditAiAnalysisPersistenceService persistenceService)
+                                       AuditAiAnalysisPersistenceService persistenceService,
+                                       AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.auditAiMapper = auditAiMapper;
         this.fastGptAuditService = fastGptAuditService;
         this.auditWorkflowAuditService = auditWorkflowAuditService;
         this.persistenceService = persistenceService;
+        this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
 
     @Override
@@ -103,6 +106,7 @@ public class AuditAiAnalysisServiceImpl implements AuditAiAnalysisService
         int rows = auditAiMapper.updateAuditAiTaskExecuting(aiTaskId, 35, "AI审核工作流分析中", operator);
         if (rows > 0)
         {
+            auditAiQueuePositionService.resortQueuePositions(operator);
             log.info("Task updated to executing, aiTaskId={}", aiTaskId);
         }
         else
@@ -121,6 +125,7 @@ public class AuditAiAnalysisServiceImpl implements AuditAiAnalysisService
         String progressText = "AI分析失败：" + message;
 
         auditAiMapper.updateAuditAiAnalysisFailure(aiTaskId, progressText, operator);
+        auditAiQueuePositionService.resortQueuePositions(operator);
         log.info("Task marked as failed, aiTaskId={}, message={}", aiTaskId, message);
     }
 

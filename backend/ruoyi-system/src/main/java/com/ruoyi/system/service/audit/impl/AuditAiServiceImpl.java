@@ -2,10 +2,8 @@ package com.ruoyi.system.service.audit.impl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +31,9 @@ public class AuditAiServiceImpl implements IAuditAiService
 
     @Autowired
     private AuditReviewMapper auditReviewMapper;
+
+    @Autowired
+    private AuditAiQueuePositionService auditAiQueuePositionService;
 
     @Autowired
     private FastGptProperties fastGptProperties;
@@ -80,7 +81,7 @@ public class AuditAiServiceImpl implements IAuditAiService
 
         AuditAiTask aiTask = buildAuditAiTask(reviewTask, reviewVersion, operator);
         auditAiMapper.insertAuditAiTask(aiTask);
-        resortQueuePositions(operator);
+        auditAiQueuePositionService.resortQueuePositions(operator);
         return auditAiMapper.selectAuditAiTaskById(aiTask.getAiTaskId());
     }
 
@@ -128,13 +129,19 @@ public class AuditAiServiceImpl implements IAuditAiService
         {
             return 0;
         }
+        List<AuditAiTask> taskList = auditAiMapper.selectAuditAiTaskListByIds(aiTaskIds);
+        if (taskList.isEmpty())
+        {
+            return 0;
+        }
+        validateTaskStatusChange(taskList, taskStatus);
         int rows = 0;
         String progressText = buildProgressText(taskStatus);
-        for (Long aiTaskId : aiTaskIds)
+        for (AuditAiTask task : taskList)
         {
-            rows += auditAiMapper.updateAuditAiTaskStatus(aiTaskId, taskStatus, progressText, updateBy);
+            rows += auditAiMapper.updateAuditAiTaskStatus(task.getAiTaskId(), taskStatus, progressText, updateBy);
         }
-        resortQueuePositions(updateBy);
+        auditAiQueuePositionService.resortQueuePositions(updateBy);
         return rows;
     }
 
@@ -147,23 +154,18 @@ public class AuditAiServiceImpl implements IAuditAiService
             return 0;
         }
         List<AuditAiTask> changedList = auditAiMapper.selectAuditAiTaskListByIds(aiTaskIds);
-        List<AuditAiTask> allList = auditAiMapper.selectAuditAiAllList();
-        if (changedList.isEmpty() || allList.isEmpty())
+        if (changedList.isEmpty())
         {
             return 0;
         }
-        for (AuditAiTask task : allList)
+        int rows = 0;
+        for (AuditAiTask task : changedList)
         {
-            for (AuditAiTask changed : changedList)
-            {
-                if (task.getAiTaskId().equals(changed.getAiTaskId()))
-                {
-                    task.setPriority(bumpPriority(task.getPriority()));
-                    break;
-                }
-            }
+            rows += auditAiMapper.updateAuditAiTaskQueue(task.getAiTaskId(), bumpPriority(task.getPriority()),
+                    task.getQueuePosition(), task.getTaskStatus(), updateBy);
         }
-        return persistQueueOrder(allList, updateBy);
+        auditAiQueuePositionService.resortQueuePositions(updateBy);
+        return rows;
     }
 
     @Override
@@ -171,6 +173,11 @@ public class AuditAiServiceImpl implements IAuditAiService
     public int updateReviewDecision(AuditAiTask task)
     {
         if (task == null || task.getAiTaskId() == null)
+        {
+            return 0;
+        }
+        AuditAiTask dbTask = auditAiMapper.selectAuditAiTaskById(task.getAiTaskId());
+        if (dbTask == null)
         {
             return 0;
         }
@@ -188,7 +195,8 @@ public class AuditAiServiceImpl implements IAuditAiService
             task.setProgressText("待修改后重新提交");
         }
         int rows = auditAiMapper.updateAuditAiReviewDecision(task);
-        resortQueuePositions(task.getUpdateBy());
+        syncReviewTaskDecision(dbTask, task);
+        auditAiQueuePositionService.resortQueuePositions(task.getUpdateBy());
         return rows;
     }
 
@@ -202,74 +210,8 @@ public class AuditAiServiceImpl implements IAuditAiService
         }
         auditAiMapper.deleteAuditAiFindingByTaskIds(aiTaskIds);
         int rows = auditAiMapper.deleteAuditAiTaskByIds(aiTaskIds);
-        resortQueuePositions("admin");
+        auditAiQueuePositionService.resortQueuePositions("admin");
         return rows;
-    }
-
-    private void resortQueuePositions(String updateBy)
-    {
-        List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
-        if (!list.isEmpty())
-        {
-            persistQueueOrder(list, updateBy);
-        }
-    }
-
-    private int persistQueueOrder(List<AuditAiTask> list, String updateBy)
-    {
-        List<AuditAiTask> sortedList = list.stream()
-                .sorted(Comparator.comparingInt((AuditAiTask item) -> statusRank(item.getTaskStatus()))
-                        .thenComparingInt(item -> priorityRank(item.getPriority()))
-                        .thenComparing(item -> item.getQueuePosition() == null ? Integer.MAX_VALUE : item.getQueuePosition())
-                        .thenComparing(AuditAiTask::getAiTaskId))
-                .collect(Collectors.toList());
-
-        int rows = 0;
-        int queuePosition = 1;
-        for (AuditAiTask task : sortedList)
-        {
-            if ("completed".equals(task.getTaskStatus()))
-            {
-                task.setQueuePosition(0);
-            }
-            else
-            {
-                task.setQueuePosition(queuePosition++);
-            }
-            rows += auditAiMapper.updateAuditAiTaskQueue(task.getAiTaskId(), task.getPriority(), task.getQueuePosition(),
-                    task.getTaskStatus(), updateBy);
-        }
-        return rows;
-    }
-
-    private int priorityRank(String priority)
-    {
-        if ("high".equals(priority))
-        {
-            return 1;
-        }
-        if ("medium".equals(priority))
-        {
-            return 2;
-        }
-        return 3;
-    }
-
-    private int statusRank(String taskStatus)
-    {
-        if ("executing".equals(taskStatus))
-        {
-            return 1;
-        }
-        if ("waiting".equals(taskStatus))
-        {
-            return 2;
-        }
-        if ("paused".equals(taskStatus))
-        {
-            return 3;
-        }
-        return 4;
     }
 
     private String bumpPriority(String priority)
@@ -283,6 +225,34 @@ public class AuditAiServiceImpl implements IAuditAiService
             return "high";
         }
         return "high";
+    }
+
+    private void validateTaskStatusChange(List<AuditAiTask> taskList, String targetStatus)
+    {
+        if ("paused".equals(targetStatus))
+        {
+            for (AuditAiTask task : taskList)
+            {
+                if ("executing".equals(task.getTaskStatus()))
+                {
+                    throw new ServiceException("执行中的任务正在被工作流处理，不能暂停");
+                }
+                if (!"waiting".equals(task.getTaskStatus()))
+                {
+                    throw new ServiceException("只有等待中的任务可以暂停");
+                }
+            }
+        }
+        if ("waiting".equals(targetStatus))
+        {
+            for (AuditAiTask task : taskList)
+            {
+                if (!"paused".equals(task.getTaskStatus()))
+                {
+                    throw new ServiceException("只有已暂停的任务可以恢复");
+                }
+            }
+        }
     }
 
     private AuditReviewVersion getReviewVersion(Long reviewTaskId, Long reviewVersionId)
@@ -324,13 +294,13 @@ public class AuditAiServiceImpl implements IAuditAiService
         aiTask.setDeliveryUnit(reviewTask.getDeliveryUnit());
         aiTask.setSubmitter(StringUtils.defaultIfBlank(reviewVersion.getSubmitter(), reviewTask.getSponsor()));
         aiTask.setPriority(StringUtils.defaultIfBlank(reviewTask.getPriority(), "medium"));
-        aiTask.setQueuePosition(nextQueuePosition());
+        aiTask.setQueuePosition(auditAiQueuePositionService.nextQueuePosition());
         aiTask.setTaskStatus("waiting");
         aiTask.setEstimatedDuration("3分钟");
         aiTask.setProgressPercent(0);
         aiTask.setProgressText("智能体等待处理");
         aiTask.setAiAnalysisCount(0);
-        aiTask.setReviewStatus(StringUtils.defaultIfBlank(reviewTask.getReviewStatus(), "pending"));
+        aiTask.setReviewStatus(StringUtils.defaultIfBlank(reviewTask.getReviewStatus(), "reviewing"));
         aiTask.setReportFileUrl(reportFileUrl);
         aiTask.setReportFileName(StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
                 extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf")));
@@ -341,20 +311,6 @@ public class AuditAiServiceImpl implements IAuditAiService
         aiTask.setCreateBy(operator);
         aiTask.setRemark("由审核列表详情入口自动创建：" + reviewVersion.getVersionNo());
         return aiTask;
-    }
-
-    private int nextQueuePosition()
-    {
-        List<AuditAiTask> list = auditAiMapper.selectAuditAiAllList();
-        int max = 0;
-        for (AuditAiTask task : list)
-        {
-            if (task.getQueuePosition() != null && task.getQueuePosition() > max)
-            {
-                max = task.getQueuePosition();
-            }
-        }
-        return max + 1;
     }
 
     private String getPrimaryFileUrl(String fileUrls)
@@ -391,6 +347,19 @@ public class AuditAiServiceImpl implements IAuditAiService
             return "文本解析智能体处理中";
         }
         return "人工审核已完成";
+    }
+
+    private void syncReviewTaskDecision(AuditAiTask dbTask, AuditAiTask decision)
+    {
+        if (dbTask.getReviewTaskId() == null || StringUtils.isBlank(decision.getReviewStatus()))
+        {
+            return;
+        }
+        AuditReviewTask reviewTask = new AuditReviewTask();
+        reviewTask.setTaskId(dbTask.getReviewTaskId());
+        reviewTask.setReviewStatus(decision.getReviewStatus());
+        reviewTask.setUpdateBy(decision.getUpdateBy());
+        auditReviewMapper.updateAuditReviewTask(reviewTask);
     }
 
     @Override
@@ -437,6 +406,7 @@ public class AuditAiServiceImpl implements IAuditAiService
                 {
                     log.warn("Task report URL is empty, mark as failed, aiTaskId={}", task.getAiTaskId());
                     auditAiMapper.updateAuditAiAnalysisFailure(task.getAiTaskId(), "报告文件URL为空", operator);
+                    auditAiQueuePositionService.resortQueuePositions(operator);
                     continue;
                 }
                 auditAiAnalysisService.analyzeAndSave(task.getAiTaskId(), operator);
@@ -470,6 +440,7 @@ public class AuditAiServiceImpl implements IAuditAiService
         {
             log.warn("Task report URL is empty, mark as failed, aiTaskId={}", aiTaskId);
             auditAiMapper.updateAuditAiAnalysisFailure(aiTaskId, "报告文件URL为空", operator);
+            auditAiQueuePositionService.resortQueuePositions(operator);
             return 0;
         }
 
@@ -488,6 +459,7 @@ public class AuditAiServiceImpl implements IAuditAiService
             return 0;
         }
 
+        auditAiQueuePositionService.resortQueuePositions(operator);
         return 1;
     }
 }

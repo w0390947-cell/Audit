@@ -29,10 +29,13 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
     private static final int MAX_FINDING_CONTENT_LENGTH = 1000;
 
     private final AuditAiMapper auditAiMapper;
+    private final AuditAiQueuePositionService auditAiQueuePositionService;
 
-    public AuditAiAnalysisPersistenceServiceImpl(AuditAiMapper auditAiMapper)
+    public AuditAiAnalysisPersistenceServiceImpl(AuditAiMapper auditAiMapper,
+                                                 AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.auditAiMapper = auditAiMapper;
+        this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
 
     /**
@@ -69,7 +72,7 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         AuditAiTask update = new AuditAiTask();
         update.setAiTaskId(aiTaskId);
         update.setTaskStatus("completed");
-        update.setReviewStatus("pending");
+        update.setReviewStatus("reviewing");
         update.setProgressPercent(100);
 
         String summary = result.getSummary();
@@ -95,6 +98,7 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         update.setUpdateBy(operator);
 
         auditAiMapper.updateAuditAiAnalysisResult(update);
+        auditAiQueuePositionService.resortQueuePositions(operator);
         log.info("Task status updated to completed, aiTaskId={}", aiTaskId);
     }
 

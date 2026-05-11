@@ -18,7 +18,7 @@ CREATE TABLE `audit_ai_task` (
   `progress_percent` int DEFAULT '0' COMMENT '进度百分比',
   `progress_text` varchar(255) DEFAULT '' COMMENT '进度文案',
   `ai_analysis_count` int DEFAULT '0' COMMENT 'AI分析次数',
-  `review_status` varchar(20) DEFAULT 'pending' COMMENT '审核状态',
+  `review_status` varchar(20) DEFAULT 'reviewing' COMMENT '审核状态',
   `report_file_name` varchar(255) DEFAULT '' COMMENT '报告文件名',
   `report_file_url` varchar(500) DEFAULT '' COMMENT '报告文件地址',
   `ai_summary` text COMMENT 'AI总结',

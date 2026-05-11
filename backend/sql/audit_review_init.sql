@@ -15,7 +15,7 @@ CREATE TABLE `audit_review_task` (
   `priority` varchar(20) DEFAULT 'medium' COMMENT '优先级',
   `ai_analysis_count` int DEFAULT '0' COMMENT 'AI分析次数',
   `task_status` varchar(20) DEFAULT 'uploaded' COMMENT '任务状态',
-  `review_status` varchar(20) DEFAULT 'pending' COMMENT '审核状态',
+  `review_status` varchar(20) DEFAULT 'reviewing' COMMENT '审核状态',
   `process_flag` char(1) DEFAULT '0' COMMENT '处理状态（0正常 1暂停）',
   `current_version_no` varchar(20) DEFAULT 'v1.0' COMMENT '当前版本号',
   `main_report_urls` text COMMENT '主报告文件',
@@ -95,8 +95,9 @@ INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value
 (2203, 3, '已检测', 'detected', 'audit_review_task_status', 'success', 'N', '0', 'admin', NOW()),
 (2204, 4, '已暂停', 'paused', 'audit_review_task_status', 'info', 'N', '0', 'admin', NOW()),
 (2301, 1, '审核通过', 'approved', 'audit_review_status', 'success', 'N', '0', 'admin', NOW()),
-(2302, 2, '待修改', 'pending', 'audit_review_status', 'warning', 'Y', '0', 'admin', NOW()),
-(2303, 3, '驳回归档', 'returned', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW());
+(2304, 2, '审核中', 'reviewing', 'audit_review_status', 'primary', 'Y', '0', 'admin', NOW()),
+(2302, 3, '待修改', 'pending', 'audit_review_status', 'warning', 'N', '0', 'admin', NOW()),
+(2303, 4, '驳回归档', 'returned', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW());
 
 DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2001 AND 2010;
 DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2001 AND 2010;

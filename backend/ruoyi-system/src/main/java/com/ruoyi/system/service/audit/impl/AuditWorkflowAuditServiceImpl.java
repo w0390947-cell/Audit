@@ -44,16 +44,20 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private final AuditAiAnalysisPersistenceService persistenceService;
 
+    private final AuditAiQueuePositionService auditAiQueuePositionService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AuditWorkflowAuditServiceImpl(AuditWorkflowProperties properties,
             @Qualifier("auditWorkflowRestTemplate") RestTemplate auditWorkflowRestTemplate,
-            AuditAiMapper auditAiMapper, AuditAiAnalysisPersistenceService persistenceService)
+            AuditAiMapper auditAiMapper, AuditAiAnalysisPersistenceService persistenceService,
+            AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.properties = properties;
         this.auditWorkflowRestTemplate = auditWorkflowRestTemplate;
         this.auditAiMapper = auditAiMapper;
         this.persistenceService = persistenceService;
+        this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
 
     @Override
@@ -128,6 +132,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         }
         String errorMsg = callback.getError() == null ? "工作流任务失败" : callback.getError().toString();
         auditAiMapper.updateAuditAiAnalysisFailure(aiTaskId, "AI审核工作流失败：" + errorMsg, "workflow-callback");
+        auditAiQueuePositionService.resortQueuePositions("workflow-callback");
     }
 
     private JsonNode createTask(AuditAiTask task, String operator)

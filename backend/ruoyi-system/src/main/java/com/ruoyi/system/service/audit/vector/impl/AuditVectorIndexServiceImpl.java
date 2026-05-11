@@ -22,6 +22,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +37,7 @@ public class AuditVectorIndexServiceImpl implements AuditVectorIndexService
     private static final String RESOURCE_STATUS_STORED = "stored";
     private static final String RESOURCE_STATUS_FAILED = "failed";
     private static final String RESOURCE_STATUS_TEXT_EMPTY = "text_empty";
+    private static final Pattern RULE_CODE_PATTERN = Pattern.compile("(?i)([A-Z]{1,8}[-_]?\\d+(?:\\.\\d+)*|第\\s*\\d+(?:\\.\\d+)*\\s*条)");
 
     private final AuditLibraryMapper auditLibraryMapper;
     private final DocumentParserService documentParserService;
@@ -205,6 +208,14 @@ public class AuditVectorIndexServiceImpl implements AuditVectorIndexService
         document.setChunkCount(0);
         document.setEmbeddingModel(properties.getEmbedding().getModel());
         document.setEmbeddingDimensions(properties.getEmbedding().getDimensions());
+        document.setKnowledgeBaseCode("default");
+        document.setCategoryCode("");
+        document.setBusinessType("");
+        document.setStatus("effective");
+        document.setEffectiveDate(null);
+        document.setExpireDate(null);
+        document.setOwnerDeptId("");
+        document.setSourceSystem("audit");
         return document;
     }
 
@@ -225,6 +236,12 @@ public class AuditVectorIndexServiceImpl implements AuditVectorIndexService
             vectorChunk.setSectionTitle(chunk.getSectionTitle());
             vectorChunk.setTokenCount(chunk.getTokenCount());
             vectorChunk.setEmbedding(embeddings.get(i));
+            vectorChunk.setChunkUid("KB-CHUNK-" + documentId + "-" + chunk.getChunkNo());
+            vectorChunk.setRuleCode(extractRuleCode(chunk));
+            vectorChunk.setSectionPath(StringUtils.defaultString(chunk.getSectionTitle()));
+            vectorChunk.setParagraphNo(null);
+            vectorChunk.setContentHash(calculateSha256Text(chunk.getChunkText()));
+            vectorChunk.setMetadata("{}");
             vectorChunks.add(vectorChunk);
         }
         return vectorChunks;
@@ -257,6 +274,32 @@ public class AuditVectorIndexServiceImpl implements AuditVectorIndexService
         {
             throw new IllegalStateException("SHA-256 算法不可用", e);
         }
+    }
+
+    private String calculateSha256Text(String text)
+    {
+        try
+        {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(StringUtils.defaultString(text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(hash.length * 2);
+            for (byte value : hash)
+            {
+                builder.append(String.format("%02x", value));
+            }
+            return builder.toString();
+        }
+        catch (NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException("SHA-256 算法不可用", e);
+        }
+    }
+
+    private String extractRuleCode(DocumentChunk chunk)
+    {
+        String source = StringUtils.defaultString(chunk.getSectionTitle()) + "\n" + StringUtils.defaultString(chunk.getChunkText());
+        Matcher matcher = RULE_CODE_PATTERN.matcher(source);
+        return matcher.find() ? matcher.group(1).replaceAll("\\s+", "") : "";
     }
 
     private void updateResourceStatus(Long resourceId, String storageStatus, String progressText, String operator)

@@ -43,6 +43,22 @@ public class AuditVectorDocument
 
     private String errorMsg;
 
+    private String knowledgeBaseCode;
+
+    private String categoryCode;
+
+    private String businessType;
+
+    private String status;
+
+    private String effectiveDate;
+
+    private String expireDate;
+
+    private String ownerDeptId;
+
+    private String sourceSystem;
+
     public Long getDocumentId()
     {
         return documentId;
@@ -211,5 +227,85 @@ public class AuditVectorDocument
     public void setErrorMsg(String errorMsg)
     {
         this.errorMsg = errorMsg;
+    }
+
+    public String getKnowledgeBaseCode()
+    {
+        return knowledgeBaseCode;
+    }
+
+    public void setKnowledgeBaseCode(String knowledgeBaseCode)
+    {
+        this.knowledgeBaseCode = knowledgeBaseCode;
+    }
+
+    public String getCategoryCode()
+    {
+        return categoryCode;
+    }
+
+    public void setCategoryCode(String categoryCode)
+    {
+        this.categoryCode = categoryCode;
+    }
+
+    public String getBusinessType()
+    {
+        return businessType;
+    }
+
+    public void setBusinessType(String businessType)
+    {
+        this.businessType = businessType;
+    }
+
+    public String getStatus()
+    {
+        return status;
+    }
+
+    public void setStatus(String status)
+    {
+        this.status = status;
+    }
+
+    public String getEffectiveDate()
+    {
+        return effectiveDate;
+    }
+
+    public void setEffectiveDate(String effectiveDate)
+    {
+        this.effectiveDate = effectiveDate;
+    }
+
+    public String getExpireDate()
+    {
+        return expireDate;
+    }
+
+    public void setExpireDate(String expireDate)
+    {
+        this.expireDate = expireDate;
+    }
+
+    public String getOwnerDeptId()
+    {
+        return ownerDeptId;
+    }
+
+    public void setOwnerDeptId(String ownerDeptId)
+    {
+        this.ownerDeptId = ownerDeptId;
+    }
+
+    public String getSourceSystem()
+    {
+        return sourceSystem;
+    }
+
+    public void setSourceSystem(String sourceSystem)
+    {
+        this.sourceSystem = sourceSystem;
     }
 }

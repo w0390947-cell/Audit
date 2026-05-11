@@ -1,6 +1,7 @@
 package com.ruoyi.framework.config;
 
 import com.ruoyi.system.config.FastGptProperties;
+import com.ruoyi.system.config.AuditWorkflowProperties;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +24,17 @@ public class HttpClientConfig
      */
     @Bean
     public RestTemplate fastGptRestTemplate(RestTemplateBuilder builder, FastGptProperties properties)
+    {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(properties.getConnectTimeout());
+        requestFactory.setReadTimeout(properties.getReadTimeout());
+        return builder
+                .requestFactory(() -> requestFactory)
+                .build();
+    }
+
+    @Bean
+    public RestTemplate auditWorkflowRestTemplate(RestTemplateBuilder builder, AuditWorkflowProperties properties)
     {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.getConnectTimeout());

@@ -22,6 +22,18 @@ public class AuditVectorChunk
 
     private float[] embedding;
 
+    private String chunkUid;
+
+    private String ruleCode;
+
+    private String sectionPath;
+
+    private Integer paragraphNo;
+
+    private String contentHash;
+
+    private String metadata;
+
     public Long getChunkId()
     {
         return chunkId;
@@ -120,5 +132,65 @@ public class AuditVectorChunk
     public void setEmbedding(float[] embedding)
     {
         this.embedding = embedding;
+    }
+
+    public String getChunkUid()
+    {
+        return chunkUid;
+    }
+
+    public void setChunkUid(String chunkUid)
+    {
+        this.chunkUid = chunkUid;
+    }
+
+    public String getRuleCode()
+    {
+        return ruleCode;
+    }
+
+    public void setRuleCode(String ruleCode)
+    {
+        this.ruleCode = ruleCode;
+    }
+
+    public String getSectionPath()
+    {
+        return sectionPath;
+    }
+
+    public void setSectionPath(String sectionPath)
+    {
+        this.sectionPath = sectionPath;
+    }
+
+    public Integer getParagraphNo()
+    {
+        return paragraphNo;
+    }
+
+    public void setParagraphNo(Integer paragraphNo)
+    {
+        this.paragraphNo = paragraphNo;
+    }
+
+    public String getContentHash()
+    {
+        return contentHash;
+    }
+
+    public void setContentHash(String contentHash)
+    {
+        this.contentHash = contentHash;
+    }
+
+    public String getMetadata()
+    {
+        return metadata;
+    }
+
+    public void setMetadata(String metadata)
+    {
+        this.metadata = metadata;
     }
 }

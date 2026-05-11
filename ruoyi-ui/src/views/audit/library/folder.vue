@@ -12,8 +12,8 @@
           <i slot="prefix" class="el-input__icon el-icon-search" />
         </el-input>
       </el-form-item>
-      <el-form-item label="文件入库状态" prop="storageStatus">
-        <el-select v-model="queryParams.storageStatus" clearable placeholder="请选择文件入库状态" style="width: 220px">
+      <el-form-item label="向量化状态" prop="storageStatus">
+        <el-select v-model="queryParams.storageStatus" clearable placeholder="请选择向量化状态" style="width: 220px">
           <el-option
             v-for="dict in dict.type.audit_file_storage_status"
             :key="dict.value"
@@ -43,7 +43,6 @@
     <div class="file-manager" v-loading="loading">
       <div class="manager-toolbar">
         <div class="path-area">
-          <div class="page-title">{{ searchMode ? '搜索结果' : '审核文件库' }}</div>
           <el-breadcrumb separator="/">
             <el-breadcrumb-item>
               <span class="breadcrumb-link" @click="goRoot">全部文件</span>
@@ -543,7 +542,7 @@ export default {
         resourceType: 'common',
         displayName: item.documentName || item.fileName || '--',
         displayTime: item.latestModifyTime || item.updateTime || item.createTime,
-        status: item.storageStatus || 'processing',
+        status: item.storageStatus || 'pending',
         fileUrl: item.fileUrl,
         metaText: item.fileSize || '文件'
       }
@@ -717,8 +716,8 @@ export default {
           fileSize: this.fileForm.fileSize || '',
           folderId: this.fileForm.folderId || 0,
           folderName: this.fileForm.folderName || '',
-          storageStatus: this.fileForm.resourceId ? undefined : 'processing',
-          progressText: this.fileForm.resourceId ? '文本解析智能体解析成功' : '文本解析智能体解析中'
+          storageStatus: this.fileForm.resourceId ? undefined : 'pending',
+          progressText: this.fileForm.resourceId ? undefined : '等待向量化任务执行'
         }
         const request = this.fileForm.resourceId ? updateCommonResource(data) : addCommonResource(data)
         request.then(() => {
@@ -813,9 +812,15 @@ export default {
       })
     },
     progressWidth(row) {
-      if (row.status === 'stored') return '100%'
-      if (row.status === 'failed') return '70%'
-      return '30%'
+      const widthMap = {
+        pending: '12%',
+        parsing: '45%',
+        embedding: '75%',
+        stored: '100%',
+        text_empty: '100%',
+        failed: '100%'
+      }
+      return widthMap[row.status] || '12%'
     },
     getCreator(item) {
       if (!item) return '--'
@@ -895,14 +900,6 @@ export default {
   gap: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid #edf0f5;
-}
-
-.page-title {
-  margin-bottom: 8px;
-  color: #2f3440;
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 30px;
 }
 
 .breadcrumb-link {
@@ -1186,7 +1183,20 @@ export default {
   background: #2f88ec;
 }
 
-.progress-bar.failed span {
+.progress-bar.pending span {
+  background: #8aa2bd;
+}
+
+.progress-bar.parsing span {
+  background: #36a3f7;
+}
+
+.progress-bar.embedding span {
+  background: #e6a23c;
+}
+
+.progress-bar.failed span,
+.progress-bar.text_empty span {
   background: #f56c6c;
 }
 
@@ -1199,12 +1209,21 @@ export default {
   line-height: 1.4;
 }
 
-.progress-text.failed {
-  color: #ef6a67;
+.progress-text.pending {
+  color: #5f6472;
 }
 
-.progress-text.processing {
-  color: #5f6472;
+.progress-text.parsing {
+  color: #2f88ec;
+}
+
+.progress-text.embedding {
+  color: #b7791f;
+}
+
+.progress-text.failed,
+.progress-text.text_empty {
+  color: #ef6a67;
 }
 
 .progress-text.stored {

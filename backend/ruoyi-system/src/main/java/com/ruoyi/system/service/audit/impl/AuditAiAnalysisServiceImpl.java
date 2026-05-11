@@ -7,6 +7,7 @@ import com.ruoyi.system.mapper.audit.AuditAiMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisPersistenceService;
 import com.ruoyi.system.service.audit.AuditAiAnalysisService;
 import com.ruoyi.system.service.audit.IFastGptAuditService;
+import com.ruoyi.system.service.audit.IAuditWorkflowAuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,14 +24,17 @@ public class AuditAiAnalysisServiceImpl implements AuditAiAnalysisService
 
     private final AuditAiMapper auditAiMapper;
     private final IFastGptAuditService fastGptAuditService;
+    private final IAuditWorkflowAuditService auditWorkflowAuditService;
     private final AuditAiAnalysisPersistenceService persistenceService;
 
     public AuditAiAnalysisServiceImpl(AuditAiMapper auditAiMapper,
                                        IFastGptAuditService fastGptAuditService,
+                                       IAuditWorkflowAuditService auditWorkflowAuditService,
                                        AuditAiAnalysisPersistenceService persistenceService)
     {
         this.auditAiMapper = auditAiMapper;
         this.fastGptAuditService = fastGptAuditService;
+        this.auditWorkflowAuditService = auditWorkflowAuditService;
         this.persistenceService = persistenceService;
     }
 
@@ -59,10 +63,13 @@ public class AuditAiAnalysisServiceImpl implements AuditAiAnalysisService
 
         try
         {
-            // 4. 调用 FastGPT
-            log.info("FastGPT calling, aiTaskId={}", aiTaskId);
-            FastGptAuditResult result = fastGptAuditService.analyze(task);
-            log.info("FastGPT completed, aiTaskId={}, findingCount={}, elapsedMs={}",
+            // 4. 调用外部 AI 审核工作流；未启用时保留 FastGPT 兼容路径。
+            log.info("AI audit backend calling, aiTaskId={}, backend={}", aiTaskId,
+                    auditWorkflowAuditService.isEnabled() ? "audit-workflow" : "fastgpt");
+            FastGptAuditResult result = auditWorkflowAuditService.isEnabled()
+                    ? auditWorkflowAuditService.analyze(task, operator)
+                    : fastGptAuditService.analyze(task);
+            log.info("AI audit backend completed, aiTaskId={}, findingCount={}, elapsedMs={}",
                     aiTaskId,
                     result.getFindings() != null ? result.getFindings().size() : 0,
                     result.getElapsedMs());
@@ -93,7 +100,7 @@ public class AuditAiAnalysisServiceImpl implements AuditAiAnalysisService
      */
     private void updateTaskToExecuting(Long aiTaskId, String operator)
     {
-        int rows = auditAiMapper.updateAuditAiTaskExecuting(aiTaskId, 35, "FastGPT 工作流分析中", operator);
+        int rows = auditAiMapper.updateAuditAiTaskExecuting(aiTaskId, 35, "AI审核工作流分析中", operator);
         if (rows > 0)
         {
             log.info("Task updated to executing, aiTaskId={}", aiTaskId);

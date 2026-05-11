@@ -22,6 +22,10 @@ import com.ruoyi.system.service.audit.vector.AuditVectorLifecycleService;
 @Service
 public class AuditLibraryServiceImpl implements IAuditLibraryService
 {
+    private static final String RESOURCE_STATUS_PENDING = "pending";
+
+    private static final String RESOURCE_PROGRESS_PENDING = "等待向量化任务执行";
+
     @Autowired
     private AuditLibraryMapper auditLibraryMapper;
 
@@ -130,6 +134,14 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
         if (resource.getLatestModifyTime() == null)
         {
             resource.setLatestModifyTime(new Date());
+        }
+        if (StringUtils.isBlank(resource.getStorageStatus()))
+        {
+            resource.setStorageStatus(RESOURCE_STATUS_PENDING);
+        }
+        if (StringUtils.isBlank(resource.getProgressText()))
+        {
+            resource.setProgressText(RESOURCE_PROGRESS_PENDING);
         }
         resource.setCreator(StringUtils.defaultIfBlank(resource.getCreator(), resource.getCreateBy()));
         int rows = auditLibraryMapper.insertAuditCommonResource(resource);

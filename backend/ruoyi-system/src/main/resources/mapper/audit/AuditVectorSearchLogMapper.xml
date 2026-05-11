@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditVectorSearchLogMapper">
+
+    <insert id="insertAuditVectorSearchLog" parameterType="AuditVectorSearchLog" useGeneratedKeys="true" keyProperty="logId">
+        insert into audit_vector_search_log
+        (request_id, workflow_code, task_id, query_count, permission_mode, scope_summary, retrieval_config,
+         result_count, top_resource_ids, status, error_code, error_msg, cost_ms, create_by, create_time)
+        values
+        (#{requestId}, #{workflowCode}, #{taskId}, #{queryCount}, #{permissionMode}, #{scopeSummary},
+         #{retrievalConfig}, #{resultCount}, #{topResourceIds}, #{status}, #{errorCode}, #{errorMsg},
+         #{costMs}, #{createBy}, now())
+    </insert>
+</mapper>

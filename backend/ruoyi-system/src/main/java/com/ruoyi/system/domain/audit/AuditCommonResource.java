@@ -22,7 +22,7 @@ public class AuditCommonResource extends BaseEntity
     @Excel(name = "归属文件库")
     private String folderName;
 
-    @Excel(name = "文件入库状态", dictType = "audit_file_storage_status")
+    @Excel(name = "向量化状态", dictType = "audit_file_storage_status")
     private String storageStatus;
 
     private String progressText;

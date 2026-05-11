@@ -191,6 +191,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="storageStatus != null and storageStatus != ''">
                 and storage_status = #{storageStatus}
             </if>
+            <if test="resourceIds != null and resourceIds.length > 0">
+                and resource_id in
+                <foreach item="resourceId" collection="resourceIds" open="(" separator="," close=")">
+                    #{resourceId}
+                </foreach>
+            </if>
             <if test="folderId != null and folderId == 0">
                 and (folder_id is null or folder_id = 0)
             </if>

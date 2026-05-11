@@ -2,6 +2,7 @@
 -- Execute these statements in the audit_vector PostgreSQL database.
 
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS audit_vector_document (
   document_id BIGSERIAL PRIMARY KEY,
@@ -17,6 +18,14 @@ CREATE TABLE IF NOT EXISTS audit_vector_document (
   chunk_count INTEGER DEFAULT 0,
   embedding_model VARCHAR(100) DEFAULT '',
   embedding_dimensions INTEGER DEFAULT 1024,
+  knowledge_base_code VARCHAR(64) DEFAULT 'default',
+  category_code VARCHAR(64) DEFAULT '',
+  business_type VARCHAR(64) DEFAULT '',
+  status VARCHAR(20) DEFAULT 'effective',
+  effective_date DATE DEFAULT NULL,
+  expire_date DATE DEFAULT NULL,
+  owner_dept_id VARCHAR(64) DEFAULT '',
+  source_system VARCHAR(64) DEFAULT 'audit',
   last_index_time TIMESTAMP DEFAULT NULL,
   error_msg TEXT,
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -29,6 +38,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_audit_vector_document_resource
 CREATE INDEX IF NOT EXISTS idx_audit_vector_document_folder
   ON audit_vector_document(folder_id);
 
+CREATE INDEX IF NOT EXISTS idx_audit_vector_document_kb
+  ON audit_vector_document(knowledge_base_code);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_document_category
+  ON audit_vector_document(category_code);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_document_status_dates
+  ON audit_vector_document(status, effective_date, expire_date);
+
 CREATE TABLE IF NOT EXISTS audit_vector_chunk (
   chunk_id BIGSERIAL PRIMARY KEY,
   document_id BIGINT NOT NULL REFERENCES audit_vector_document(document_id) ON DELETE CASCADE,
@@ -39,6 +57,12 @@ CREATE TABLE IF NOT EXISTS audit_vector_chunk (
   page_no INTEGER DEFAULT NULL,
   section_title VARCHAR(255) DEFAULT '',
   token_count INTEGER DEFAULT 0,
+  chunk_uid VARCHAR(80) DEFAULT '',
+  rule_code VARCHAR(100) DEFAULT '',
+  section_path VARCHAR(500) DEFAULT '',
+  paragraph_no INTEGER DEFAULT NULL,
+  content_hash VARCHAR(64) DEFAULT '',
+  metadata JSONB DEFAULT '{}'::jsonb,
   embedding vector(1024) NOT NULL,
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -51,6 +75,28 @@ CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_resource
 
 CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_folder
   ON audit_vector_chunk(folder_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_audit_vector_chunk_uid
+  ON audit_vector_chunk(chunk_uid)
+  WHERE chunk_uid <> '';
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_rule
+  ON audit_vector_chunk(rule_code);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_text_trgm
+  ON audit_vector_chunk USING gin(chunk_text gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_rule_trgm
+  ON audit_vector_chunk USING gin(rule_code gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_section_path_trgm
+  ON audit_vector_chunk USING gin(section_path gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_document_file_name_trgm
+  ON audit_vector_document USING gin(file_name gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_metadata
+  ON audit_vector_chunk USING gin(metadata);
 
 CREATE INDEX IF NOT EXISTS idx_audit_vector_chunk_embedding
   ON audit_vector_chunk USING ivfflat (embedding vector_cosine_ops)

@@ -24,6 +24,8 @@ public class VectorProperties
 
     private Lifecycle lifecycle = new Lifecycle();
 
+    private Search search = new Search();
+
     public boolean isEnabled()
     {
         return enabled;
@@ -92,6 +94,16 @@ public class VectorProperties
     public void setLifecycle(Lifecycle lifecycle)
     {
         this.lifecycle = lifecycle;
+    }
+
+    public Search getSearch()
+    {
+        return search;
+    }
+
+    public void setSearch(Search search)
+    {
+        this.search = search;
     }
 
     public static class Datasource
@@ -358,6 +370,105 @@ public class VectorProperties
         public void setEnabled(boolean enabled)
         {
             this.enabled = enabled;
+        }
+    }
+
+    public static class Search
+    {
+        private boolean hybridEnabled = true;
+
+        private double vectorWeight = 0.75D;
+
+        private double keywordWeight = 0.25D;
+
+        private int vectorCandidateMultiplier = 3;
+
+        private int keywordCandidateMultiplier = 2;
+
+        private double defaultMinScore = 0.3D;
+
+        private int maxTopK = 20;
+
+        private int maxCandidateK = 100;
+
+        public boolean isHybridEnabled()
+        {
+            return hybridEnabled;
+        }
+
+        public void setHybridEnabled(boolean hybridEnabled)
+        {
+            this.hybridEnabled = hybridEnabled;
+        }
+
+        public double getVectorWeight()
+        {
+            return vectorWeight;
+        }
+
+        public void setVectorWeight(double vectorWeight)
+        {
+            this.vectorWeight = vectorWeight;
+        }
+
+        public double getKeywordWeight()
+        {
+            return keywordWeight;
+        }
+
+        public void setKeywordWeight(double keywordWeight)
+        {
+            this.keywordWeight = keywordWeight;
+        }
+
+        public int getVectorCandidateMultiplier()
+        {
+            return vectorCandidateMultiplier;
+        }
+
+        public void setVectorCandidateMultiplier(int vectorCandidateMultiplier)
+        {
+            this.vectorCandidateMultiplier = vectorCandidateMultiplier;
+        }
+
+        public int getKeywordCandidateMultiplier()
+        {
+            return keywordCandidateMultiplier;
+        }
+
+        public void setKeywordCandidateMultiplier(int keywordCandidateMultiplier)
+        {
+            this.keywordCandidateMultiplier = keywordCandidateMultiplier;
+        }
+
+        public double getDefaultMinScore()
+        {
+            return defaultMinScore;
+        }
+
+        public void setDefaultMinScore(double defaultMinScore)
+        {
+            this.defaultMinScore = defaultMinScore;
+        }
+
+        public int getMaxTopK()
+        {
+            return maxTopK;
+        }
+
+        public void setMaxTopK(int maxTopK)
+        {
+            this.maxTopK = maxTopK;
+        }
+
+        public int getMaxCandidateK()
+        {
+            return maxCandidateK;
+        }
+
+        public void setMaxCandidateK(int maxCandidateK)
+        {
+            this.maxCandidateK = maxCandidateK;
         }
     }
 

@@ -1,6 +1,8 @@
 SET NAMES utf8mb4;
 
 DROP TABLE IF EXISTS `audit_task_resource`;
+DROP TABLE IF EXISTS `audit_vector_eval_case`;
+DROP TABLE IF EXISTS `audit_vector_search_log`;
 DROP TABLE IF EXISTS `audit_vector_task`;
 DROP TABLE IF EXISTS `audit_common_resource_version`;
 DROP TABLE IF EXISTS `audit_common_resource`;
@@ -96,7 +98,7 @@ CREATE TABLE `audit_common_resource` (
   `document_name` varchar(100) NOT NULL COMMENT '文档名称',
   `folder_id` bigint DEFAULT NULL COMMENT '归属文件库主键',
   `folder_name` varchar(100) DEFAULT '' COMMENT '归属文件库名称',
-  `storage_status` varchar(20) DEFAULT 'processing' COMMENT '文件入库状态',
+  `storage_status` varchar(20) DEFAULT 'pending' COMMENT '向量化状态',
   `progress_text` varchar(255) DEFAULT '' COMMENT '文件进度',
   `creator` varchar(64) DEFAULT '' COMMENT '创建者',
   `latest_modify_time` datetime DEFAULT NULL COMMENT '最新修改时间',
@@ -161,21 +163,61 @@ CREATE TABLE IF NOT EXISTS `audit_vector_task` (
   KEY `idx_audit_vector_task_resource` (`resource_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核文件向量化任务表';
 
+CREATE TABLE IF NOT EXISTS `audit_vector_search_log` (
+  `log_id` bigint NOT NULL AUTO_INCREMENT COMMENT '日志主键',
+  `request_id` varchar(100) DEFAULT '' COMMENT '请求ID',
+  `workflow_code` varchar(100) DEFAULT '' COMMENT '工作流编码',
+  `task_id` varchar(100) DEFAULT '' COMMENT '工作流任务ID',
+  `query_count` int DEFAULT 1 COMMENT '查询数量',
+  `permission_mode` varchar(32) DEFAULT '' COMMENT '权限模式',
+  `scope_summary` varchar(1000) DEFAULT '' COMMENT '范围摘要',
+  `retrieval_config` varchar(1000) DEFAULT '' COMMENT '检索配置摘要',
+  `result_count` int DEFAULT 0 COMMENT '总召回数量',
+  `top_resource_ids` varchar(1000) DEFAULT '' COMMENT '召回资源摘要',
+  `status` varchar(20) DEFAULT 'success' COMMENT 'success/failed',
+  `error_code` varchar(64) DEFAULT '' COMMENT '错误码',
+  `error_msg` varchar(500) DEFAULT '' COMMENT '错误信息',
+  `cost_ms` bigint DEFAULT 0 COMMENT '耗时毫秒',
+  `create_by` varchar(64) DEFAULT '',
+  `create_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`log_id`),
+  KEY `idx_audit_vector_search_log_request` (`request_id`),
+  KEY `idx_audit_vector_search_log_workflow` (`workflow_code`, `task_id`),
+  KEY `idx_audit_vector_search_log_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核知识库检索日志表';
+
+CREATE TABLE IF NOT EXISTS `audit_vector_eval_case` (
+  `case_id` bigint NOT NULL AUTO_INCREMENT COMMENT '评估样例主键',
+  `workflow_code` varchar(100) DEFAULT '' COMMENT '工作流编码',
+  `query_text` varchar(1000) NOT NULL COMMENT '检索问题',
+  `expected_resource_id` bigint DEFAULT NULL COMMENT '期望资源ID',
+  `expected_chunk_uid` varchar(100) DEFAULT '' COMMENT '期望分片UID',
+  `expected_rule_code` varchar(100) DEFAULT '' COMMENT '期望规则编号',
+  `enabled` char(1) DEFAULT '1' COMMENT '是否启用（1启用 0停用）',
+  `create_by` varchar(64) DEFAULT '',
+  `create_time` datetime DEFAULT NULL,
+  `update_by` varchar(64) DEFAULT '',
+  `update_time` datetime DEFAULT NULL,
+  `remark` varchar(500) DEFAULT '' COMMENT '备注',
+  PRIMARY KEY (`case_id`),
+  KEY `idx_audit_vector_eval_case_workflow` (`workflow_code`),
+  KEY `idx_audit_vector_eval_case_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核知识库召回评估样例表';
+
 DELETE FROM `sys_dict_data` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status');
 DELETE FROM `sys_dict_type` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status');
 
 INSERT INTO `sys_dict_type` (`dict_id`, `dict_name`, `dict_type`, `status`, `create_by`, `create_time`, `remark`) VALUES
-(2012, '文件入库状态', 'audit_file_storage_status', '0', 'admin', NOW(), '审核资源库'),
+(2012, '向量化状态', 'audit_file_storage_status', '0', 'admin', NOW(), '审核资源库'),
 (2013, '任务文件采集状态', 'audit_task_collect_status', '0', 'admin', NOW(), '审核资源库');
 
 INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value`, `dict_type`, `list_class`, `is_default`, `status`, `create_by`, `create_time`) VALUES
-(2401, 1, '入库中', 'processing', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
-(2402, 2, '已入库', 'stored', 'audit_file_storage_status', 'primary', 'Y', '0', 'admin', NOW()),
-(2403, 3, '入库失败', 'failed', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
-(2404, 4, '等待向量化', 'pending', 'audit_file_storage_status', 'info', 'N', '0', 'admin', NOW()),
-(2405, 5, '解析中', 'parsing', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
-(2406, 6, '向量生成中', 'embedding', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
-(2407, 7, '未识别文本', 'text_empty', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
+(2404, 1, '等待向量化', 'pending', 'audit_file_storage_status', 'info', 'Y', '0', 'admin', NOW()),
+(2405, 2, '解析中', 'parsing', 'audit_file_storage_status', 'primary', 'N', '0', 'admin', NOW()),
+(2406, 3, '向量生成中', 'embedding', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
+(2402, 4, '已向量化', 'stored', 'audit_file_storage_status', 'success', 'N', '0', 'admin', NOW()),
+(2407, 5, '未识别文本', 'text_empty', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
+(2403, 6, '向量化失败', 'failed', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
 (2411, 1, '归集处理中', 'processing', 'audit_task_collect_status', 'primary', 'N', '0', 'admin', NOW()),
 (2412, 2, '已归集', 'archived', 'audit_task_collect_status', 'success', 'Y', '0', 'admin', NOW()),
 (2413, 3, '归集失败', 'failed', 'audit_task_collect_status', 'danger', 'N', '0', 'admin', NOW());
@@ -255,22 +297,22 @@ VALUES
 INSERT INTO `audit_common_resource`
 (`resource_id`, `document_name`, `folder_id`, `folder_name`, `storage_status`, `progress_text`, `creator`, `latest_modify_time`, `file_size`, `file_name`, `file_url`, `current_version_no`, `del_flag`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
 VALUES
-(1, 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求', 0, '', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:39:11', '1.31MB', 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', '/profile/upload/2026/05/05/GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', 'v1.0', '0', 'admin', '2026-05-05 20:39:10', 'admin', '2026-05-05 20:39:10', NULL),
-(2, 'GBT3836.9-2021', 0, '', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:40:13', '456.47KB', 'GBT3836.9-2021_20260505204011A002.docx', '/profile/upload/2026/05/05/GBT3836.9-2021_20260505204011A002.docx', 'v1.0', '0', 'admin', '2026-05-05 20:40:12', 'admin', '2026-05-05 20:40:12', NULL),
-(3, 'GBT3836.2-2021', 0, '', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:50:02', '23.90MB', 'GBT3836.2-2021_20260505205001A001.pdf', '/profile/upload/2026/05/05/GBT3836.2-2021_20260505205001A001.pdf', 'v1.0', '0', 'admin', '2026-05-05 20:50:02', 'admin', '2026-05-05 20:50:02', NULL),
-(4, '2025520398+其它+技术审查', 5, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:58:31', '58.82KB', '2025520398+其它+技术审查_20260505205830A002.doc', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205830A002.doc', 'v1.0', '0', 'admin', '2026-05-05 20:58:31', 'admin', '2026-05-05 20:58:31', NULL),
-(5, '2025520398+其它+技术审查', 5, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:58:41', '39.74KB', '2025520398+其它+技术审查_20260505205839A003.docx', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205839A003.docx', 'v1.0', '0', 'admin', '2026-05-05 20:58:40', 'admin', '2026-05-05 20:58:40', NULL),
-(6, '2025520398＋合格证＋CCRI25.2513', 5, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:04', '270.13KB', '2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', '/profile/upload/2026/05/05/2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', 'v1.0', '0', 'admin', '2026-05-05 20:59:04', 'admin', '2026-05-05 20:59:04', NULL),
-(7, '任务单【2025520398】', 2, '文件库一', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:17', '363.78KB', '任务单【2025520398】_20260505205916A005.pdf', '/profile/upload/2026/05/05/任务单【2025520398】_20260505205916A005.pdf', 'v1.0', '0', 'admin', '2026-05-05 20:59:17', 'admin', '2026-05-05 20:59:17', NULL),
-(8, 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:45', '265.41KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', 'v1.0', '0', 'admin', '2026-05-05 20:59:44', 'admin', '2026-05-05 20:59:44', NULL),
-(9, 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 20:59:54', '136.46KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', 'v1.0', '0', 'admin', '2026-05-05 20:59:53', 'admin', '2026-05-05 20:59:53', NULL),
-(10, 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:00:05', '22.50KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', 'v1.0', '0', 'admin', '2026-05-05 21:00:05', 'admin', '2026-05-05 21:00:05', NULL),
-(11, 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:00:15', '15.16KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', 'v1.0', '0', 'admin', '2026-05-05 21:00:15', 'admin', '2026-05-05 21:00:15', NULL),
-(12, 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书', 4, '审核标准库', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:00:29', '134.00KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', 'v1.0', '0', 'admin', '2026-05-05 21:00:29', 'admin', '2026-05-05 21:00:29', NULL),
-(13, 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准', 6, '客户资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:20', '86.22KB', 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', 'v1.0', '0', 'admin', '2026-05-05 21:01:19', 'admin', '2026-05-05 21:01:19', NULL),
-(14, 'KXJ127矿用隔爆兼本安型PLC控制箱说明书', 6, '客户资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:28', '65.17KB', 'KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', 'v1.0', '0', 'admin', '2026-05-05 21:01:28', 'admin', '2026-05-05 21:01:28', NULL),
-(15, '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）', 7, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:44', '154.15KB', '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', '/profile/upload/2026/05/05/安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', 'v1.0', '0', 'admin', '2026-05-05 21:01:44', 'admin', '2026-05-05 21:01:44', NULL),
-(16, '检测分院实验室业务管理系统', 7, '中心资料', 'processing', '文本解析智能体解析中', 'admin', '2026-05-05 21:01:56', '187.58KB', '检测分院实验室业务管理系统_20260505210152A014.pdf', '/profile/upload/2026/05/05/检测分院实验室业务管理系统_20260505210152A014.pdf', 'v1.0', '0', 'admin', '2026-05-05 21:01:55', 'admin', '2026-05-05 21:01:55', NULL);
+(1, 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求', 0, '', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:39:11', '1.31MB', 'GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', '/profile/upload/2026/05/05/GBT3836.1-2021 爆炸性环境 第1部分： 设备 通用要求_20260505203909A001.docx', 'v1.0', '0', 'admin', '2026-05-05 20:39:10', 'admin', '2026-05-05 20:39:10', NULL),
+(2, 'GBT3836.9-2021', 0, '', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:40:13', '456.47KB', 'GBT3836.9-2021_20260505204011A002.docx', '/profile/upload/2026/05/05/GBT3836.9-2021_20260505204011A002.docx', 'v1.0', '0', 'admin', '2026-05-05 20:40:12', 'admin', '2026-05-05 20:40:12', NULL),
+(3, 'GBT3836.2-2021', 0, '', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:50:02', '23.90MB', 'GBT3836.2-2021_20260505205001A001.pdf', '/profile/upload/2026/05/05/GBT3836.2-2021_20260505205001A001.pdf', 'v1.0', '0', 'admin', '2026-05-05 20:50:02', 'admin', '2026-05-05 20:50:02', NULL),
+(4, '2025520398+其它+技术审查', 5, '中心资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:58:31', '58.82KB', '2025520398+其它+技术审查_20260505205830A002.doc', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205830A002.doc', 'v1.0', '0', 'admin', '2026-05-05 20:58:31', 'admin', '2026-05-05 20:58:31', NULL),
+(5, '2025520398+其它+技术审查', 5, '中心资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:58:41', '39.74KB', '2025520398+其它+技术审查_20260505205839A003.docx', '/profile/upload/2026/05/05/2025520398+其它+技术审查_20260505205839A003.docx', 'v1.0', '0', 'admin', '2026-05-05 20:58:40', 'admin', '2026-05-05 20:58:40', NULL),
+(6, '2025520398＋合格证＋CCRI25.2513', 5, '中心资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:59:04', '270.13KB', '2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', '/profile/upload/2026/05/05/2025520398＋合格证＋CCRI25.2513_20260505205903A004.doc', 'v1.0', '0', 'admin', '2026-05-05 20:59:04', 'admin', '2026-05-05 20:59:04', NULL),
+(7, '任务单【2025520398】', 2, '文件库一', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:59:17', '363.78KB', '任务单【2025520398】_20260505205916A005.pdf', '/profile/upload/2026/05/05/任务单【2025520398】_20260505205916A005.pdf', 'v1.0', '0', 'admin', '2026-05-05 20:59:17', 'admin', '2026-05-05 20:59:17', NULL),
+(8, 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标', 4, '审核标准库', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:59:45', '265.41KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205943A006.doc', 'v1.0', '0', 'admin', '2026-05-05 20:59:44', 'admin', '2026-05-05 20:59:44', NULL),
+(9, 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标', 4, '审核标准库', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 20:59:54', '136.46KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机企标_20260505205952A007.docx', 'v1.0', '0', 'admin', '2026-05-05 20:59:53', 'admin', '2026-05-05 20:59:53', NULL),
+(10, 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表', 4, '审核标准库', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:00:05', '22.50KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210004A008.doc', 'v1.0', '0', 'admin', '2026-05-05 21:00:05', 'admin', '2026-05-05 21:00:05', NULL),
+(11, 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表', 4, '审核标准库', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:00:15', '15.16KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机受控元件明细表_20260505210013A009.docx', 'v1.0', '0', 'admin', '2026-05-05 21:00:15', 'admin', '2026-05-05 21:00:15', NULL),
+(12, 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书', 4, '审核标准库', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:00:29', '134.00KB', 'ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', '/profile/upload/2026/05/05/ZDYZ127-Z矿用隔爆兼本安型监控主机说明书_20260505210026A010.doc', 'v1.0', '0', 'admin', '2026-05-05 21:00:29', 'admin', '2026-05-05 21:00:29', NULL),
+(13, 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准', 6, '客户资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:01:20', '86.22KB', 'KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱企业标准_20260505210118A011.docx', 'v1.0', '0', 'admin', '2026-05-05 21:01:19', 'admin', '2026-05-05 21:01:19', NULL),
+(14, 'KXJ127矿用隔爆兼本安型PLC控制箱说明书', 6, '客户资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:01:28', '65.17KB', 'KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', '/profile/upload/2026/05/05/KXJ127矿用隔爆兼本安型PLC控制箱说明书_20260505210126A012.doc', 'v1.0', '0', 'admin', '2026-05-05 21:01:28', 'admin', '2026-05-05 21:01:28', NULL),
+(15, '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）', 7, '中心资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:01:44', '154.15KB', '安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', '/profile/upload/2026/05/05/安标国家矿用产品安全标志中心（矿用产品安全标志技术审查与产品检验委托书）_20260505210143A013.pdf', 'v1.0', '0', 'admin', '2026-05-05 21:01:44', 'admin', '2026-05-05 21:01:44', NULL),
+(16, '检测分院实验室业务管理系统', 7, '中心资料', 'pending', '等待向量化任务执行', 'admin', '2026-05-05 21:01:56', '187.58KB', '检测分院实验室业务管理系统_20260505210152A014.pdf', '/profile/upload/2026/05/05/检测分院实验室业务管理系统_20260505210152A014.pdf', 'v1.0', '0', 'admin', '2026-05-05 21:01:55', 'admin', '2026-05-05 21:01:55', NULL);
 
 INSERT INTO `audit_common_resource_version`
 (`version_id`, `resource_id`, `version_no`, `file_name`, `file_url`, `file_size`, `creator`, `create_time`)

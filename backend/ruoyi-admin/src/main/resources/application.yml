@@ -170,6 +170,25 @@ fastgpt:
   # 最大并发任务数
   max-running-tasks: 3
 
+# 外部 AI 审核工作流系统配置
+audit-workflow:
+  enabled: true
+  base-url: http://127.0.0.1:8080
+  workflow-code: policy_document_audit
+  uploaded-basis-workflow-code: uploaded_basis_document_audit
+  # 若工作流系统需要调用业务系统回调，可填写完整外网可访问地址，例如 http://127.0.0.1:6039/audit/ai/workflow/callback
+  callback-url: http://127.0.0.1:6039/audit/ai/workflow/callback
+  callback-token:
+  api-token:
+  public-file-base-url: http://127.0.0.1:6039
+  knowledge-base-codes:
+    - default
+  permission-mode: explicit_scope
+  connect-timeout: 10000
+  read-timeout: 60000
+  poll-interval-ms: 3000
+  poll-timeout-ms: 900000
+
 # 审核文件库向量化配置
 vector:
   # 阶段 1 默认关闭，避免未部署 PostgreSQL/pgvector 时影响现有业务启动
@@ -198,6 +217,15 @@ vector:
     fixed-delay: 10000
     batch-size: 3
     max-running: 2
+  search:
+    hybrid-enabled: true
+    vector-weight: 0.75
+    keyword-weight: 0.25
+    vector-candidate-multiplier: 3
+    keyword-candidate-multiplier: 2
+    default-min-score: 0.3
+    max-top-k: 20
+    max-candidate-k: 100
   lifecycle:
     enabled: true
   chat:

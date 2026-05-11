@@ -72,20 +72,25 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         update.setReviewStatus("pending");
         update.setProgressPercent(100);
 
-        if (findings.isEmpty())
-        {
-            update.setProgressText("AI分析完成，未发现关键问题");
-        }
-        else
-        {
-            update.setProgressText("AI分析完成，待人工审核");
-        }
-
         String summary = result.getSummary();
         if (isBlank(summary))
         {
             summary = buildDefaultSummary(findings.size());
         }
+
+        if (!findings.isEmpty())
+        {
+            update.setProgressText("AI分析完成，待人工审核");
+        }
+        else if (requiresManualReview(summary))
+        {
+            update.setProgressText("AI分析完成，建议人工复核");
+        }
+        else
+        {
+            update.setProgressText("AI分析完成，未发现关键问题");
+        }
+
         update.setAiSummary(summary);
         update.setUpdateBy(operator);
 
@@ -139,5 +144,15 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
             return "未发现关键问题";
         }
         return String.format("本次报告发现 %d 个问题", issueCount);
+    }
+
+    private boolean requiresManualReview(String summary)
+    {
+        if (isBlank(summary))
+        {
+            return false;
+        }
+        return summary.contains("人工复核") || summary.contains("人工审核")
+                || summary.contains("风险信号") || summary.contains("复核");
     }
 }

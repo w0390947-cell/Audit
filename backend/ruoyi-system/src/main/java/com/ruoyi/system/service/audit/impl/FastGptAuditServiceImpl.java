@@ -10,6 +10,7 @@ import com.ruoyi.system.exception.FastGptAuditException;
 import com.ruoyi.system.service.audit.IFastGptAuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -35,7 +36,8 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
     private final RestTemplate fastGptRestTemplate;
     private final ObjectMapper objectMapper;
 
-    public FastGptAuditServiceImpl(FastGptProperties properties, RestTemplate fastGptRestTemplate)
+    public FastGptAuditServiceImpl(FastGptProperties properties,
+                                   @Qualifier("fastGptRestTemplate") RestTemplate fastGptRestTemplate)
     {
         this.properties = properties;
         this.fastGptRestTemplate = fastGptRestTemplate;

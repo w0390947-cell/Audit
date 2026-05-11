@@ -12,8 +12,8 @@
           <i slot="prefix" class="el-input__icon el-icon-search" />
         </el-input>
       </el-form-item>
-      <el-form-item label="文件入库状态" prop="storageStatus">
-        <el-select v-model="queryParams.storageStatus" clearable placeholder="请选择文件入库状态" style="width: 240px">
+      <el-form-item label="向量化状态" prop="storageStatus">
+        <el-select v-model="queryParams.storageStatus" clearable placeholder="请选择向量化状态" style="width: 240px">
           <el-option
             v-for="dict in dict.type.audit_file_storage_status"
             :key="dict.value"
@@ -67,9 +67,9 @@
             {{ scope.row.folderName || '文件库一' }}
           </template>
         </el-table-column>
-        <el-table-column label="文件入库状态" align="center" prop="storageStatus" width="120">
+        <el-table-column label="向量化状态" align="center" prop="storageStatus" width="120">
           <template slot-scope="scope">
-            <el-tag :class="['status-pill', scope.row.storageStatus]" disable-transitions>
+            <el-tag :class="['status-pill', storageStatusClass(scope.row.storageStatus)]" disable-transitions>
               {{ storageStatusLabel(scope.row.storageStatus) }}
             </el-tag>
           </template>
@@ -77,8 +77,8 @@
         <el-table-column label="文件进度" align="left" min-width="250">
           <template slot-scope="scope">
             <div class="progress-cell">
-              <span :class="['progress-text', scope.row.storageStatus]">{{ scope.row.progressText || '--' }}</span>
-              <div :class="['progress-bar', scope.row.storageStatus]">
+              <span :class="['progress-text', storageStatusClass(scope.row.storageStatus)]">{{ scope.row.progressText || '--' }}</span>
+              <div :class="['progress-bar', storageStatusClass(scope.row.storageStatus)]">
                 <span :style="{ width: progressWidth(scope.row) }" />
               </div>
             </div>
@@ -121,7 +121,7 @@
               归类文件库
             </el-button>
             <el-button
-              v-if="scope.row.storageStatus !== 'processing'"
+              v-if="!isVectorProcessing(scope.row.storageStatus)"
               size="mini"
               type="text"
               @click="handleVersion(scope.row)"
@@ -300,13 +300,21 @@ export default {
       return [this.queryDate, this.queryDate]
     },
     storageStatusLabel(status) {
-      if (status === 'stored') {
-        return '已入库'
+      if (!status) {
+        return '--'
       }
-      if (status === 'failed') {
-        return '入库失败'
+      const options = (this.dict && this.dict.type && this.dict.type.audit_file_storage_status) || []
+      const item = options.find(dict => dict.value === status)
+      if (item) {
+        return item.label
       }
-      return '入库中'
+      return status
+    },
+    storageStatusClass(status) {
+      return status || 'unknown'
+    },
+    isVectorProcessing(status) {
+      return ['pending', 'parsing', 'embedding'].includes(status)
     },
     getList() {
       this.loading = true
@@ -324,13 +332,15 @@ export default {
       })
     },
     progressWidth(row) {
-      if (row.storageStatus === 'stored') {
-        return '100%'
+      const widthMap = {
+        pending: '12%',
+        parsing: '45%',
+        embedding: '75%',
+        stored: '100%',
+        text_empty: '100%',
+        failed: '100%'
       }
-      if (row.storageStatus === 'failed') {
-        return '70%'
-      }
-      return '30%'
+      return widthMap[row.storageStatus] || '12%'
     },
     handleSelectionChange(selection) {
       this.selectedIds = selection.map(item => item.resourceId)
@@ -404,8 +414,8 @@ export default {
           fileSize: this.form.fileSize || '',
           folderId: this.form.folderId,
           folderName: this.form.folderName,
-          storageStatus: this.form.resourceId ? undefined : 'processing',
-          progressText: this.form.resourceId ? '文本解析智能体解析成功' : '文本解析智能体解析中'
+          storageStatus: this.form.resourceId ? undefined : 'pending',
+          progressText: this.form.resourceId ? undefined : '等待向量化任务执行'
         }
         const request = this.form.resourceId ? updateCommonResource(data) : addCommonResource(data)
         request.then(() => {
@@ -560,7 +570,20 @@ export default {
   background: #2f88ec;
 }
 
-.progress-bar.failed span {
+.progress-bar.pending span {
+  background: #8aa2bd;
+}
+
+.progress-bar.parsing span {
+  background: #36a3f7;
+}
+
+.progress-bar.embedding span {
+  background: #e6a23c;
+}
+
+.progress-bar.failed span,
+.progress-bar.text_empty span {
   background: #f56c6c;
 }
 
@@ -573,12 +596,21 @@ export default {
   line-height: 1.4;
 }
 
-.progress-text.failed {
-  color: #ef6a67;
+.progress-text.pending {
+  color: #5f6472;
 }
 
-.progress-text.processing {
-  color: #5f6472;
+.progress-text.parsing {
+  color: #2f88ec;
+}
+
+.progress-text.embedding {
+  color: #b7791f;
+}
+
+.progress-text.failed,
+.progress-text.text_empty {
+  color: #ef6a67;
 }
 
 .progress-text.stored {
@@ -593,19 +625,32 @@ export default {
   border: 1px solid transparent;
 }
 
-.status-pill.processing {
+.status-pill.pending {
+  background: #f3f6fa;
+  border-color: #dfe7f0;
+  color: #64748b;
+}
+
+.status-pill.parsing {
+  background: #eaf5ff;
+  border-color: #d7eaff;
+  color: #2f88ec;
+}
+
+.status-pill.embedding {
+  background: #fdf6ec;
+  border-color: #faecd8;
+  color: #b7791f;
+}
+
+.status-pill.stored {
   background: #eaf8eb;
   border-color: #d4f0d8;
   color: #58bf74;
 }
 
-.status-pill.stored {
-  background: #eaf3ff;
-  border-color: #dbe9ff;
-  color: #5c96ec;
-}
-
-.status-pill.failed {
+.status-pill.failed,
+.status-pill.text_empty {
   background: #fdeeed;
   border-color: #fadad7;
   color: #ef6d68;

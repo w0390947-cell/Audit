@@ -7,9 +7,11 @@ import com.ruoyi.system.domain.audit.AuditCommonResource;
 import com.ruoyi.system.domain.audit.vector.AuditVectorSearchHit;
 import com.ruoyi.system.domain.audit.vector.AuditVectorSearchRequest;
 import com.ruoyi.system.domain.audit.vector.AuditVectorSearchResult;
+import com.ruoyi.system.domain.audit.vector.RerankResult;
 import com.ruoyi.system.mapper.audit.AuditLibraryMapper;
 import com.ruoyi.system.service.audit.vector.AuditVectorSearchService;
 import com.ruoyi.system.service.audit.vector.EmbeddingClient;
+import com.ruoyi.system.service.audit.vector.RerankClient;
 import com.ruoyi.system.service.audit.vector.VectorStoreRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -57,14 +59,17 @@ public class AuditVectorSearchServiceImpl implements AuditVectorSearchService
 
     private final VectorStoreRepository vectorStoreRepository;
 
+    private final RerankClient rerankClient;
+
     private final VectorProperties vectorProperties;
 
     public AuditVectorSearchServiceImpl(AuditLibraryMapper auditLibraryMapper, EmbeddingClient embeddingClient,
-            VectorStoreRepository vectorStoreRepository, VectorProperties vectorProperties)
+            VectorStoreRepository vectorStoreRepository, RerankClient rerankClient, VectorProperties vectorProperties)
     {
         this.auditLibraryMapper = auditLibraryMapper;
         this.embeddingClient = embeddingClient;
         this.vectorStoreRepository = vectorStoreRepository;
+        this.rerankClient = rerankClient;
         this.vectorProperties = vectorProperties;
     }
 
@@ -181,7 +186,9 @@ public class AuditVectorSearchServiceImpl implements AuditVectorSearchService
         options.maxChunkChars = maxChunkChars;
         options.hybrid = request.getHybrid() == null ? vectorProperties.getSearch().isHybridEnabled()
                 : request.getHybrid();
-        options.rerank = Boolean.TRUE.equals(request.getRerank());
+        options.rerank = request.getRerank() == null || request.getRerank();
+        options.rerankEnabled = options.rerank && rerankClient != null;
+        options.rerankMaxDocumentChars = resolveRerankMaxDocumentChars();
         options.vectorCandidateK = resolveCandidateK(topK, vectorProperties.getSearch().getVectorCandidateMultiplier(),
                 30);
         options.keywordCandidateK = resolveCandidateK(topK,
@@ -224,37 +231,45 @@ public class AuditVectorSearchServiceImpl implements AuditVectorSearchService
         return Math.max(candidateK, topK);
     }
 
+    private int resolveRerankMaxDocumentChars()
+    {
+        int configured = vectorProperties.getReranker().getMaxDocumentChars();
+        if (configured <= 0)
+        {
+            return DEFAULT_MAX_CHUNK_CHARS;
+        }
+        return Math.min(configured, MAX_CHUNK_CHARS);
+    }
+
     private List<AuditVectorSearchHit> executeSearch(AuditVectorSearchRequest request, SearchOptions options,
             Set<Long> readableResourceIds, float[] embedding)
     {
+        boolean includeCandidateText = options.includeChunkText || options.rerankEnabled;
         if (!options.hybrid)
         {
             List<AuditVectorSearchHit> hits = vectorStoreRepository.searchChunks(embedding, readableResourceIds,
-                    options.topK, options.minScore, options.includeChunkText, options.maxChunkChars,
+                    options.rerankEnabled ? options.vectorCandidateK : options.topK,
+                    options.rerankEnabled ? null : options.minScore, includeCandidateText, options.maxChunkChars,
                     request.getKnowledgeBaseCodes(), request.getCategoryCodes(), request.getBusinessType(),
                     request.getEffectiveOnly(), request.getAsOfDate());
             for (AuditVectorSearchHit hit : hits)
             {
                 hit.setVectorScore(hit.getScore());
-                if (options.rerank)
-                {
-                    hit.setRankScore(hit.getScore());
-                }
-                hit.setMetadata(withRetrievalMetadata(hit.getMetadata(), hit.getVectorScore(), BigDecimal.ZERO,
-                        options.rerank ? hit.getRankScore() : null, "vector"));
+                hit.setKeywordScore(BigDecimal.ZERO);
+                hit.setMatchReason("vector");
             }
             enrichFolderName(hits);
-            return hits;
+            return finalizeCandidates(options, hits);
         }
 
         List<String> keywords = extractKeywords(options.query);
         List<AuditVectorSearchHit> vectorHits = vectorStoreRepository.searchChunks(embedding, readableResourceIds,
-                options.vectorCandidateK, null, options.includeChunkText, options.maxChunkChars,
+                options.vectorCandidateK, null, includeCandidateText, options.maxChunkChars,
                 request.getKnowledgeBaseCodes(), request.getCategoryCodes(), request.getBusinessType(),
                 request.getEffectiveOnly(), request.getAsOfDate());
         List<AuditVectorSearchHit> keywordHits = keywords.isEmpty() ? new ArrayList<>()
                 : vectorStoreRepository.searchKeywordChunks(keywords, readableResourceIds, options.keywordCandidateK,
-                        options.includeChunkText, options.maxChunkChars, request.getKnowledgeBaseCodes(),
+                        includeCandidateText, options.maxChunkChars, request.getKnowledgeBaseCodes(),
                         request.getCategoryCodes(), request.getBusinessType(), request.getEffectiveOnly(),
                         request.getAsOfDate());
 
@@ -280,22 +295,48 @@ public class AuditVectorSearchServiceImpl implements AuditVectorSearchService
         {
             BigDecimal finalScore = calculateFinalScore(hit, options);
             hit.setScore(finalScore);
-            if (options.rerank)
-            {
-                hit.setRankScore(finalScore);
-            }
-            hit.setMetadata(withRetrievalMetadata(hit.getMetadata(), hit.getVectorScore(), hit.getKeywordScore(),
-                    hit.getRankScore(), hit.getMatchReason()));
         }
         enrichFolderName(merged);
-        merged.sort(Comparator.comparing(AuditVectorSearchHit::getScore, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(hit -> hit.getChunkId() == null ? Long.MAX_VALUE : hit.getChunkId()));
+        return finalizeCandidates(options, merged);
+    }
+
+    private List<AuditVectorSearchHit> finalizeCandidates(SearchOptions options, List<AuditVectorSearchHit> candidates)
+    {
+        if (CollectionUtils.isEmpty(candidates))
+        {
+            return new ArrayList<>();
+        }
+        List<AuditVectorSearchHit> ranked = new ArrayList<>(candidates);
+        if (options.rerankEnabled && ranked.size() > 1)
+        {
+            ranked = rerankCandidates(options, ranked);
+        }
+        else
+        {
+            ranked.sort(Comparator.comparing(AuditVectorSearchHit::getScore,
+                    Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(hit -> hit.getChunkId() == null ? Long.MAX_VALUE : hit.getChunkId()));
+            if (options.rerank)
+            {
+                for (AuditVectorSearchHit hit : ranked)
+                {
+                    hit.setRankScore(hit.getScore());
+                }
+            }
+        }
+
         List<AuditVectorSearchHit> filtered = new ArrayList<>();
-        for (AuditVectorSearchHit hit : merged)
+        for (AuditVectorSearchHit hit : ranked)
         {
             if (options.minScore != null && (hit.getScore() == null || hit.getScore().compareTo(options.minScore) < 0))
             {
                 continue;
+            }
+            hit.setMetadata(withRetrievalMetadata(hit.getMetadata(), hit.getVectorScore(), hit.getKeywordScore(),
+                    hit.getRankScore(), hit.getMatchReason()));
+            if (!options.includeChunkText)
+            {
+                hit.setChunkText("");
             }
             filtered.add(hit);
             if (filtered.size() >= options.topK)
@@ -304,6 +345,112 @@ public class AuditVectorSearchServiceImpl implements AuditVectorSearchService
             }
         }
         return filtered;
+    }
+
+    private List<AuditVectorSearchHit> rerankCandidates(SearchOptions options, List<AuditVectorSearchHit> candidates)
+    {
+        List<String> documents = new ArrayList<>();
+        for (AuditVectorSearchHit hit : candidates)
+        {
+            documents.add(buildRerankDocument(hit, options.rerankMaxDocumentChars));
+        }
+
+        List<RerankResult> rerankResults = rerankClient.rerank(options.query, documents, candidates.size());
+        if (CollectionUtils.isEmpty(rerankResults))
+        {
+            candidates.sort(Comparator.comparing(AuditVectorSearchHit::getScore,
+                    Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(hit -> hit.getChunkId() == null ? Long.MAX_VALUE : hit.getChunkId()));
+            for (AuditVectorSearchHit hit : candidates)
+            {
+                hit.setRankScore(hit.getScore());
+            }
+            return candidates;
+        }
+
+        Set<Integer> usedIndexes = new LinkedHashSet<>();
+        List<AuditVectorSearchHit> ranked = new ArrayList<>();
+        for (RerankResult result : rerankResults)
+        {
+            if (result == null || result.getIndex() == null)
+            {
+                continue;
+            }
+            int index = result.getIndex();
+            if (index < 0 || index >= candidates.size() || !usedIndexes.add(index))
+            {
+                continue;
+            }
+            AuditVectorSearchHit hit = candidates.get(index);
+            BigDecimal rankScore = normalizeRerankScore(result.getScore());
+            hit.setRankScore(rankScore);
+            hit.setScore(rankScore);
+            hit.setMatchReason(mergeReason(hit.getMatchReason(), "rerank"));
+            ranked.add(hit);
+        }
+
+        List<AuditVectorSearchHit> missing = new ArrayList<>();
+        for (int i = 0; i < candidates.size(); i++)
+        {
+            if (!usedIndexes.contains(i))
+            {
+                AuditVectorSearchHit hit = candidates.get(i);
+                hit.setRankScore(hit.getScore());
+                missing.add(hit);
+            }
+        }
+        missing.sort(Comparator.comparing(AuditVectorSearchHit::getScore,
+                Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(hit -> hit.getChunkId() == null ? Long.MAX_VALUE : hit.getChunkId()));
+        ranked.addAll(missing);
+        return ranked;
+    }
+
+    private String buildRerankDocument(AuditVectorSearchHit hit, int maxChars)
+    {
+        StringBuilder builder = new StringBuilder();
+        appendRerankField(builder, "文件", hit.getFileName());
+        appendRerankField(builder, "章节", StringUtils.defaultIfBlank(hit.getSectionPath(), hit.getSectionTitle()));
+        appendRerankField(builder, "条款", hit.getRuleCode());
+        appendRerankField(builder, "正文", hit.getChunkText());
+        String document = builder.toString();
+        if (StringUtils.isBlank(document))
+        {
+            document = StringUtils.defaultString(hit.getFileName());
+        }
+        int safeMaxChars = Math.max(100, maxChars);
+        return document.length() > safeMaxChars ? document.substring(0, safeMaxChars) : document;
+    }
+
+    private void appendRerankField(StringBuilder builder, String name, String value)
+    {
+        if (StringUtils.isBlank(value))
+        {
+            return;
+        }
+        if (builder.length() > 0)
+        {
+            builder.append('\n');
+        }
+        builder.append(name).append("：").append(value.trim());
+    }
+
+    private BigDecimal normalizeRerankScore(BigDecimal score)
+    {
+        if (score == null)
+        {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal normalized = score;
+        if (normalized.compareTo(BigDecimal.ZERO) < 0)
+        {
+            normalized = BigDecimal.ZERO;
+        }
+        if (normalized.compareTo(BigDecimal.ONE) > 0)
+        {
+            normalized = BigDecimal.ONE;
+        }
+        return normalized.setScale(6, RoundingMode.HALF_UP);
     }
 
     private void mergeCandidate(Map<String, AuditVectorSearchHit> candidates, AuditVectorSearchHit candidate)
@@ -750,6 +897,10 @@ public class AuditVectorSearchServiceImpl implements AuditVectorSearchService
         private boolean hybrid;
 
         private boolean rerank;
+
+        private boolean rerankEnabled;
+
+        private int rerankMaxDocumentChars;
     }
 
     private static class KeywordScore

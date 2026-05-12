@@ -12,4 +12,9 @@ public interface AuditWorkflowCallbackEventMapper
     int updateAuditWorkflowCallbackEventStatus(@Param("callbackEventId") String callbackEventId,
             @Param("eventStatus") String eventStatus,
             @Param("errorMessage") String errorMessage);
+
+    int retryFailedAuditWorkflowCallbackEvent(@Param("callbackEventId") String callbackEventId,
+            @Param("aiTaskId") Long aiTaskId,
+            @Param("workflowTaskId") String workflowTaskId,
+            @Param("rawPayload") String rawPayload);
 }

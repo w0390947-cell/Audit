@@ -16,6 +16,10 @@ public class AuditAiFinding implements Serializable
 
     private String findingContent;
 
+    private Integer pageNo;
+
+    private String locationJson;
+
     private Integer sortNum;
 
     public Long getFindingId()
@@ -66,6 +70,26 @@ public class AuditAiFinding implements Serializable
     public void setFindingContent(String findingContent)
     {
         this.findingContent = findingContent;
+    }
+
+    public Integer getPageNo()
+    {
+        return pageNo;
+    }
+
+    public void setPageNo(Integer pageNo)
+    {
+        this.pageNo = pageNo;
+    }
+
+    public String getLocationJson()
+    {
+        return locationJson;
+    }
+
+    public void setLocationJson(String locationJson)
+    {
+        this.locationJson = locationJson;
     }
 
     public Integer getSortNum()

@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.ruoyi.common.config.RuoYiConfig;
@@ -55,13 +56,16 @@ public class AuditAiReportPreviewServiceImpl implements AuditAiReportPreviewServ
 
         String fileType = FilenameUtils.getExtension(sourcePath.getFileName().toString()).toLowerCase(Locale.ROOT);
         String previewFileUrl;
+        Path previewPath;
         if ("pdf".equals(fileType))
         {
+            previewPath = sourcePath;
             previewFileUrl = toProfileUrl(sourcePath);
         }
         else if ("doc".equals(fileType) || "docx".equals(fileType))
         {
             previewFileUrl = convertOfficeToPdf(sourcePath);
+            previewPath = resolveProfilePath(previewFileUrl);
         }
         else
         {
@@ -74,6 +78,7 @@ public class AuditAiReportPreviewServiceImpl implements AuditAiReportPreviewServ
         preview.setSourceFileUrl(sourceFileUrl);
         preview.setPreviewFileUrl(previewFileUrl);
         preview.setFileType(fileType);
+        preview.setPageCount(countPdfPages(previewPath));
         return preview;
     }
 
@@ -226,5 +231,21 @@ public class AuditAiReportPreviewServiceImpl implements AuditAiReportPreviewServ
         Path profilePath = Path.of(RuoYiConfig.getProfile()).toAbsolutePath().normalize();
         Path relativePath = profilePath.relativize(path.toAbsolutePath().normalize());
         return Constants.RESOURCE_PREFIX + "/" + relativePath.toString().replace(File.separatorChar, '/');
+    }
+
+    private Integer countPdfPages(Path pdfPath)
+    {
+        if (pdfPath == null || !Files.exists(pdfPath))
+        {
+            return null;
+        }
+        try (PDDocument document = PDDocument.load(pdfPath.toFile()))
+        {
+            return document.getNumberOfPages();
+        }
+        catch (IOException e)
+        {
+            return null;
+        }
     }
 }

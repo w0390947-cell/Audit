@@ -40,6 +40,16 @@ public class FastGptAuditFinding implements Serializable
     private String location;
 
     /**
+     * 报告页码，从 1 开始。
+     */
+    private Integer pageNo;
+
+    /**
+     * 原始定位信息 JSON，供后续页内高亮等能力扩展。
+     */
+    private String locationJson;
+
+    /**
      * 修改建议
      */
     private String suggestion;
@@ -105,6 +115,26 @@ public class FastGptAuditFinding implements Serializable
         this.location = location;
     }
 
+    public Integer getPageNo()
+    {
+        return pageNo;
+    }
+
+    public void setPageNo(Integer pageNo)
+    {
+        this.pageNo = pageNo;
+    }
+
+    public String getLocationJson()
+    {
+        return locationJson;
+    }
+
+    public void setLocationJson(String locationJson)
+    {
+        this.locationJson = locationJson;
+    }
+
     public String getSuggestion()
     {
         return suggestion;
@@ -124,6 +154,8 @@ public class FastGptAuditFinding implements Serializable
                 ", content='" + content + '\'' +
                 ", severity='" + severity + '\'' +
                 ", location='" + location + '\'' +
+                ", pageNo=" + pageNo +
+                ", locationJson='" + locationJson + '\'' +
                 ", suggestion='" + suggestion + '\'' +
                 '}';
     }

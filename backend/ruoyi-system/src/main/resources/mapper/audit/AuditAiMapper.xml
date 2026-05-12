@@ -41,6 +41,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="findingType" column="finding_type"/>
         <result property="findingTitle" column="finding_title"/>
         <result property="findingContent" column="finding_content"/>
+        <result property="pageNo" column="page_no"/>
+        <result property="locationJson" column="location_json"/>
         <result property="sortNum" column="sort_num"/>
     </resultMap>
 
@@ -111,14 +113,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectAuditAiFindingListByTaskId" parameterType="Long" resultMap="AuditAiFindingResult">
-        select finding_id, ai_task_id, finding_type, finding_title, finding_content, sort_num
+        select finding_id, ai_task_id, finding_type, finding_title, finding_content, page_no, location_json, sort_num
         from audit_ai_finding
         where ai_task_id = #{aiTaskId}
         order by sort_num asc, finding_id asc
     </select>
 
     <select id="selectAuditAiFindingListByReviewTaskId" parameterType="Long" resultMap="AuditAiFindingResult">
-        select f.finding_id, f.ai_task_id, f.finding_type, f.finding_title, f.finding_content, f.sort_num
+        select f.finding_id, f.ai_task_id, f.finding_type, f.finding_title, f.finding_content, f.page_no, f.location_json, f.sort_num
         from audit_ai_finding f
         inner join audit_ai_task t on t.ai_task_id = f.ai_task_id
         where t.review_task_id = #{reviewTaskId}
@@ -127,7 +129,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectAuditAiFindingListByReviewVersionId" parameterType="Long" resultMap="AuditAiFindingResult">
-        select f.finding_id, f.ai_task_id, f.finding_type, f.finding_title, f.finding_content, f.sort_num
+        select f.finding_id, f.ai_task_id, f.finding_type, f.finding_title, f.finding_content, f.page_no, f.location_json, f.sort_num
         from audit_ai_finding f
         inner join audit_ai_task t on t.ai_task_id = f.ai_task_id
         where t.review_version_id = #{reviewVersionId}
@@ -226,9 +228,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertAuditAiFinding" parameterType="AuditAiFinding">
         insert into audit_ai_finding
-            (ai_task_id, finding_type, finding_title, finding_content, sort_num)
+            (ai_task_id, finding_type, finding_title, finding_content, page_no, location_json, sort_num)
         values
-            (#{aiTaskId}, #{findingType}, #{findingTitle}, #{findingContent}, #{sortNum})
+            (#{aiTaskId}, #{findingType}, #{findingTitle}, #{findingContent}, #{pageNo}, #{locationJson}, #{sortNum})
     </insert>
 
     <update id="updateAuditAiAnalysisResult" parameterType="AuditAiTask">
@@ -262,7 +264,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <update id="updateAuditAiAnalysisFailure">
         update audit_ai_task
-        set task_status = 'paused',
+        set task_status = 'failed',
             progress_text = #{progressText},
             update_by = #{updateBy},
             update_time = sysdate()
@@ -279,6 +281,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where ai_task_id = #{aiTaskId}
           and del_flag = '0'
           and task_status != 'executing'
+    </update>
+
+    <update id="updateAuditAiTaskStageProgress">
+        update audit_ai_task
+        set task_status = 'executing',
+            progress_percent = ifnull(#{progressPercent}, progress_percent),
+            progress_text = ifnull(#{progressText}, progress_text),
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+          and del_flag = '0'
+          and task_status not in ('completed', 'failed')
     </update>
 
     <update id="requeueAuditAiTask">

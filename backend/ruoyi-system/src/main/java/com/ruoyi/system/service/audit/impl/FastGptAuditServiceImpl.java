@@ -21,6 +21,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * FastGPT 审核服务实现
@@ -31,6 +33,8 @@ import java.util.*;
 public class FastGptAuditServiceImpl implements IFastGptAuditService
 {
     private static final Logger log = LoggerFactory.getLogger(FastGptAuditServiceImpl.class);
+
+    private static final Pattern PAGE_TEXT_PATTERN = Pattern.compile("(?:第\\s*)?(\\d+)\\s*页");
 
     private final FastGptProperties properties;
     private final RestTemplate fastGptRestTemplate;
@@ -797,7 +801,8 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
         String title = normalizeText(findingNode.path("title").asText());
         String content = normalizeText(findingNode.path("content").asText());
         String severity = normalizeText(findingNode.path("severity").asText());
-        String location = normalizeText(findingNode.path("location").asText());
+        JsonNode locationNode = findingNode.path("location");
+        String location = normalizeText(toTextOrJson(locationNode));
         String suggestion = normalizeText(findingNode.path("suggestion").asText());
 
         // content 如果缺失，使用原始 title；如果 title 也没有，丢弃该条。
@@ -840,6 +845,8 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
         FastGptAuditFinding finding = new FastGptAuditFinding(type, title, content);
         finding.setSeverity(severity);
         finding.setLocation(location);
+        finding.setPageNo(resolvePageNo(findingNode));
+        finding.setLocationJson(toJson(locationNode));
         finding.setSuggestion(suggestion);
 
         return finding;
@@ -851,6 +858,110 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
     private String normalizeText(String text)
     {
         return text == null ? "" : text.trim();
+    }
+
+    private Integer resolvePageNo(JsonNode findingNode)
+    {
+        JsonNode locationNode = findingNode.path("location");
+        Integer pageNo = firstPositiveInt(locationNode.path("page"), locationNode.path("pageNo"),
+                locationNode.path("page_no"), findingNode.path("page"), findingNode.path("pageNo"),
+                findingNode.path("page_no"));
+        if (pageNo != null)
+        {
+            return pageNo;
+        }
+        return parsePageNoFromText(toTextOrJson(locationNode));
+    }
+
+    private Integer firstPositiveInt(JsonNode... nodes)
+    {
+        for (JsonNode node : nodes)
+        {
+            Integer value = toPositiveInt(node);
+            if (value != null)
+            {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Integer toPositiveInt(JsonNode node)
+    {
+        if (node == null || node.isMissingNode() || node.isNull())
+        {
+            return null;
+        }
+        if (node.isInt() || node.isLong())
+        {
+            int value = node.asInt();
+            return value > 0 ? value : null;
+        }
+        String text = node.asText("");
+        if (text == null || text.trim().isEmpty())
+        {
+            return null;
+        }
+        try
+        {
+            int value = Integer.parseInt(text.trim());
+            return value > 0 ? value : null;
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
+    }
+
+    private Integer parsePageNoFromText(String text)
+    {
+        if (text == null || text.trim().isEmpty())
+        {
+            return null;
+        }
+        Matcher matcher = PAGE_TEXT_PATTERN.matcher(text);
+        if (!matcher.find())
+        {
+            return null;
+        }
+        try
+        {
+            int value = Integer.parseInt(matcher.group(1));
+            return value > 0 ? value : null;
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
+    }
+
+    private String toTextOrJson(JsonNode node)
+    {
+        if (node == null || node.isMissingNode() || node.isNull())
+        {
+            return "";
+        }
+        if (node.isTextual() || node.isNumber() || node.isBoolean())
+        {
+            return node.asText("");
+        }
+        return toJson(node);
+    }
+
+    private String toJson(JsonNode node)
+    {
+        if (node == null || node.isMissingNode() || node.isNull())
+        {
+            return "";
+        }
+        try
+        {
+            return objectMapper.writeValueAsString(node);
+        }
+        catch (Exception e)
+        {
+            return node.asText("");
+        }
     }
 
     /**

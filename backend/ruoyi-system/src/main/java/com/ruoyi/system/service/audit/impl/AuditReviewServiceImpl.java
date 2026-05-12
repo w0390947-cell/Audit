@@ -3,7 +3,9 @@ package com.ruoyi.system.service.audit.impl;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,22 +13,31 @@ import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.domain.audit.AuditAiFinding;
 import com.ruoyi.system.domain.audit.AuditAiTask;
+import com.ruoyi.system.domain.audit.AuditCommonResource;
+import com.ruoyi.system.domain.audit.AuditLibraryFolder;
 import com.ruoyi.system.domain.audit.AuditReviewIssue;
 import com.ruoyi.system.domain.audit.AuditReviewStage;
 import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
+import com.ruoyi.system.domain.audit.AuditUploadedFile;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
 import com.ruoyi.system.mapper.audit.AuditReviewMapper;
+import com.ruoyi.system.service.audit.IAuditLibraryService;
 import com.ruoyi.system.service.audit.IAuditReviewService;
 
 @Service
 public class AuditReviewServiceImpl implements IAuditReviewService
 {
+    private static final String BASIS_RESOURCE_FOLDER_NAME = "任务文件资源";
+
     @Autowired
     private AuditReviewMapper auditReviewMapper;
 
     @Autowired
     private AuditAiMapper auditAiMapper;
+
+    @Autowired
+    private IAuditLibraryService auditLibraryService;
 
     @Autowired
     private AuditAiQueuePositionService auditAiQueuePositionService;
@@ -77,6 +88,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         task.setCurrentVersionNo("v1.0");
         int rows = auditReviewMapper.insertAuditReviewTask(task);
         AuditReviewVersion version = saveSnapshot(task, "v1.0");
+        archiveUploadedBasisFiles(task);
         createAuditAiTask(task, version);
         return rows;
     }
@@ -96,6 +108,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         int rows = auditReviewMapper.updateAuditReviewTask(task);
         auditReviewMapper.clearCurrentVersionFlag(task.getTaskId());
         saveSnapshot(task, nextVersionNo);
+        archiveUploadedBasisFiles(task);
         return rows;
     }
 
@@ -274,6 +287,101 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         }
         int index = fileUrl.lastIndexOf("/");
         return index > -1 ? fileUrl.substring(index + 1) : fileUrl;
+    }
+
+    private void archiveUploadedBasisFiles(AuditReviewTask task)
+    {
+        List<AuditUploadedFile> uploadedFiles = task.getBasisUploadedFiles();
+        if (uploadedFiles == null || uploadedFiles.isEmpty())
+        {
+            return;
+        }
+        Set<String> currentBasisUrls = splitFileUrlSet(task.getBasisFileUrls());
+        if (currentBasisUrls.isEmpty())
+        {
+            return;
+        }
+        AuditLibraryFolder folder = ensureBasisResourceFolder(task);
+        Set<String> handledUrls = new HashSet<>();
+        for (AuditUploadedFile uploadedFile : uploadedFiles)
+        {
+            if (uploadedFile == null || StringUtils.isBlank(uploadedFile.getFileUrl()))
+            {
+                continue;
+            }
+            String fileUrl = uploadedFile.getFileUrl().trim();
+            if (!currentBasisUrls.contains(fileUrl) || !handledUrls.add(fileUrl) || existsCommonResource(fileUrl))
+            {
+                continue;
+            }
+            AuditCommonResource resource = new AuditCommonResource();
+            resource.setDocumentName(StringUtils.defaultIfBlank(uploadedFile.getOriginalFilename(),
+                    extractFileName(fileUrl, uploadedFile.getFileName())));
+            resource.setFolderId(folder.getFolderId());
+            resource.setFolderName(folder.getFolderName());
+            resource.setCreator(StringUtils.defaultIfBlank(task.getCreateBy(), task.getUpdateBy()));
+            resource.setFileSize(uploadedFile.getFileSize());
+            resource.setFileName(extractFileName(fileUrl, uploadedFile.getFileName()));
+            resource.setFileUrl(fileUrl);
+            resource.setCreateBy(StringUtils.defaultIfBlank(task.getCreateBy(), task.getUpdateBy()));
+            resource.setUpdateBy(StringUtils.defaultIfBlank(task.getUpdateBy(), task.getCreateBy()));
+            resource.setRemark("由审核列表依据文件自动入库");
+            auditLibraryService.insertAuditCommonResource(resource);
+        }
+    }
+
+    private Set<String> splitFileUrlSet(String fileUrls)
+    {
+        Set<String> result = new HashSet<>();
+        if (StringUtils.isBlank(fileUrls))
+        {
+            return result;
+        }
+        for (String fileUrl : fileUrls.split(","))
+        {
+            if (StringUtils.isNotBlank(fileUrl))
+            {
+                result.add(fileUrl.trim());
+            }
+        }
+        return result;
+    }
+
+    private boolean existsCommonResource(String fileUrl)
+    {
+        AuditCommonResource query = new AuditCommonResource();
+        query.setFileUrl(fileUrl);
+        List<AuditCommonResource> resources = auditLibraryService.selectAuditCommonResourceList(query);
+        return resources != null && !resources.isEmpty();
+    }
+
+    private AuditLibraryFolder ensureBasisResourceFolder(AuditReviewTask task)
+    {
+        AuditLibraryFolder query = new AuditLibraryFolder();
+        query.setParentId(0L);
+        query.setFolderName(BASIS_RESOURCE_FOLDER_NAME);
+        List<AuditLibraryFolder> folders = auditLibraryService.selectAuditLibraryFolderList(query);
+        if (folders != null)
+        {
+            for (AuditLibraryFolder folder : folders)
+            {
+                if (BASIS_RESOURCE_FOLDER_NAME.equals(folder.getFolderName())
+                        && (folder.getParentId() == null || folder.getParentId() == 0L))
+                {
+                    return folder;
+                }
+            }
+        }
+        AuditLibraryFolder folder = new AuditLibraryFolder();
+        folder.setParentId(0L);
+        folder.setFolderName(BASIS_RESOURCE_FOLDER_NAME);
+        folder.setIntro("审核列表依据文件自动入库目录");
+        folder.setVisibleScope("all");
+        folder.setTopFlag("0");
+        folder.setCreateBy(StringUtils.defaultIfBlank(task.getCreateBy(), task.getUpdateBy()));
+        folder.setUpdateBy(StringUtils.defaultIfBlank(task.getUpdateBy(), task.getCreateBy()));
+        auditLibraryService.insertAuditLibraryFolder(folder);
+        return folder;
     }
 
     private void createAuditAiTask(AuditReviewTask reviewTask, AuditReviewVersion reviewVersion)

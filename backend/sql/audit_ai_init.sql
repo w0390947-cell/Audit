@@ -42,6 +42,8 @@ CREATE TABLE `audit_ai_finding` (
   `finding_type` varchar(50) DEFAULT '' COMMENT '发现类型',
   `finding_title` varchar(100) DEFAULT '' COMMENT '发现标题',
   `finding_content` varchar(1000) DEFAULT '' COMMENT '发现内容',
+  `page_no` int DEFAULT NULL COMMENT '报告页码，从1开始',
+  `location_json` text COMMENT '定位信息JSON',
   `sort_num` int DEFAULT '0' COMMENT '排序号',
   PRIMARY KEY (`finding_id`),
   KEY `idx_audit_ai_finding_task` (`ai_task_id`)
@@ -57,7 +59,8 @@ INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value
 (2311, 1, '执行中', 'executing', 'audit_ai_task_status', 'primary', 'N', '0', 'admin', NOW()),
 (2312, 2, '等待中', 'waiting', 'audit_ai_task_status', 'warning', 'Y', '0', 'admin', NOW()),
 (2313, 3, '已暂停', 'paused', 'audit_ai_task_status', 'info', 'N', '0', 'admin', NOW()),
-(2314, 4, '已完成', 'completed', 'audit_ai_task_status', 'success', 'N', '0', 'admin', NOW());
+(2314, 4, '已完成', 'completed', 'audit_ai_task_status', 'success', 'N', '0', 'admin', NOW()),
+(2315, 5, '已失败', 'failed', 'audit_ai_task_status', 'danger', 'N', '0', 'admin', NOW());
 
 DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2011 AND 2020;
 DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2011 AND 2020;
@@ -117,13 +120,13 @@ VALUES
  '', '', '2025-06-18 13:38:00', 'admin', NOW(), 'admin', NOW(), '暂停中的任务');
 
 INSERT INTO `audit_ai_finding`
-(`finding_id`, `ai_task_id`, `finding_type`, `finding_title`, `finding_content`, `sort_num`)
+(`finding_id`, `ai_task_id`, `finding_type`, `finding_title`, `finding_content`, `page_no`, `location_json`, `sort_num`)
 VALUES
-(1, 1, '内容缺失', '内容缺失：委托单位联系人及联系方式未填写', '本次报告经AI核查，发现存在内容缺失、格式错误两类问题，具体已汇总如下，对应报告中相关标注位置，便于整改完善。', 1),
-(2, 1, '格式错误', '格式错误：检测项目及结果未按规范设置表格标题', '本次报告经AI核查，发现存在内容缺失、格式错误两类问题，具体已汇总如下，对应报告中相关标注位置，便于整改完善。', 2),
-(3, 2, '解析摘要', '文本结构化处理进度', '文本解析智能体已完成段落拆分，正在生成标准字段映射。', 1),
-(4, 3, '排队提示', '等待执行', '当前队列共计3个任务，该条任务位于队列第3位。', 1),
-(5, 4, '暂停提示', '任务已暂停', '当前任务已暂停，如需重新参与AI审核请执行恢复操作。', 1);
+(1, 1, '内容缺失', '内容缺失：委托单位联系人及联系方式未填写', '本次报告经AI核查，发现存在内容缺失、格式错误两类问题，具体已汇总如下，对应报告中相关标注位置，便于整改完善。', 1, '{"page":1}', 1),
+(2, 1, '格式错误', '格式错误：检测项目及结果未按规范设置表格标题', '本次报告经AI核查，发现存在内容缺失、格式错误两类问题，具体已汇总如下，对应报告中相关标注位置，便于整改完善。', 2, '{"page":2}', 2),
+(3, 2, '解析摘要', '文本结构化处理进度', '文本解析智能体已完成段落拆分，正在生成标准字段映射。', NULL, NULL, 1),
+(4, 3, '排队提示', '等待执行', '当前队列共计3个任务，该条任务位于队列第3位。', NULL, NULL, 1),
+(5, 4, '暂停提示', '任务已暂停', '当前任务已暂停，如需重新参与AI审核请执行恢复操作。', NULL, NULL, 1);
 
 -- ============================================================
 -- FastGPT 集成相关菜单和权限（阶段 4）

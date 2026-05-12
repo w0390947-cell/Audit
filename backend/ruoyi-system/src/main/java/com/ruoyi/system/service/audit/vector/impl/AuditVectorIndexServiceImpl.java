@@ -37,6 +37,7 @@ public class AuditVectorIndexServiceImpl implements AuditVectorIndexService
     private static final String RESOURCE_STATUS_STORED = "stored";
     private static final String RESOURCE_STATUS_FAILED = "failed";
     private static final String RESOURCE_STATUS_TEXT_EMPTY = "text_empty";
+    private static final int RESOURCE_PROGRESS_TEXT_MAX_LENGTH = 255;
     private static final Pattern RULE_CODE_PATTERN = Pattern.compile("(?i)([A-Z]{1,8}[-_]?\\d+(?:\\.\\d+)*|第\\s*\\d+(?:\\.\\d+)*\\s*条)");
 
     private final AuditLibraryMapper auditLibraryMapper;
@@ -307,9 +308,16 @@ public class AuditVectorIndexServiceImpl implements AuditVectorIndexService
         AuditCommonResource update = new AuditCommonResource();
         update.setResourceId(resourceId);
         update.setStorageStatus(storageStatus);
-        update.setProgressText(safeError(progressText));
+        update.setProgressText(safeProgressText(progressText));
         update.setUpdateBy(StringUtils.defaultIfBlank(operator, "system"));
         auditLibraryMapper.updateAuditCommonResource(update);
+    }
+
+    private String safeProgressText(String message)
+    {
+        String safeMessage = safeError(message);
+        return safeMessage.length() > RESOURCE_PROGRESS_TEXT_MAX_LENGTH
+                ? safeMessage.substring(0, RESOURCE_PROGRESS_TEXT_MAX_LENGTH) : safeMessage;
     }
 
     private String safeError(String message)

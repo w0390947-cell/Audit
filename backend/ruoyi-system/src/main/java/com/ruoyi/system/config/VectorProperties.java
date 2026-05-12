@@ -20,6 +20,8 @@ public class VectorProperties
 
     private ModelConfig chat = new ModelConfig();
 
+    private Reranker reranker = new Reranker();
+
     private Task task = new Task();
 
     private Lifecycle lifecycle = new Lifecycle();
@@ -74,6 +76,16 @@ public class VectorProperties
     public void setChat(ModelConfig chat)
     {
         this.chat = chat;
+    }
+
+    public Reranker getReranker()
+    {
+        return reranker;
+    }
+
+    public void setReranker(Reranker reranker)
+    {
+        this.reranker = reranker;
     }
 
     public Task getTask()
@@ -304,6 +316,33 @@ public class VectorProperties
         public void setReadTimeout(int readTimeout)
         {
             this.readTimeout = readTimeout;
+        }
+    }
+
+    public static class Reranker extends ModelConfig
+    {
+        private int maxDocumentChars = 2000;
+
+        private String instruct;
+
+        public int getMaxDocumentChars()
+        {
+            return maxDocumentChars;
+        }
+
+        public void setMaxDocumentChars(int maxDocumentChars)
+        {
+            this.maxDocumentChars = maxDocumentChars;
+        }
+
+        public String getInstruct()
+        {
+            return instruct;
+        }
+
+        public void setInstruct(String instruct)
+        {
+            this.instruct = instruct;
         }
     }
 

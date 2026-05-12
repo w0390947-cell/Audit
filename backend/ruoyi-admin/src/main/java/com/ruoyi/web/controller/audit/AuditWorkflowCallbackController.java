@@ -29,4 +29,12 @@ public class AuditWorkflowCallbackController
         auditWorkflowAuditService.handleCallback(callback, authorization);
         return AjaxResult.success();
     }
+
+    @PostMapping("/stageCallback")
+    public AjaxResult stageCallback(@RequestBody AuditWorkflowCallback callback,
+            @RequestHeader(value = "Authorization", required = false) String authorization)
+    {
+        auditWorkflowAuditService.handleStageCallback(callback, authorization);
+        return AjaxResult.success();
+    }
 }

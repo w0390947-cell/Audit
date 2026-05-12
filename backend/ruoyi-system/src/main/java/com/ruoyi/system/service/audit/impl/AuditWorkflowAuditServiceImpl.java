@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.config.AuditWorkflowProperties;
 import com.ruoyi.system.domain.audit.AuditAiFlowStage;
+import com.ruoyi.system.domain.audit.AuditAiReportPreview;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.domain.audit.FastGptAuditFinding;
 import com.ruoyi.system.domain.audit.FastGptAuditResult;
@@ -17,6 +18,7 @@ import com.ruoyi.system.mapper.audit.AuditAiFlowStageMapper;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
 import com.ruoyi.system.mapper.audit.AuditWorkflowCallbackEventMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisPersistenceService;
+import com.ruoyi.system.service.audit.AuditAiReportPreviewService;
 import com.ruoyi.system.service.audit.IAuditWorkflowAuditService;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -27,8 +29,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -50,6 +55,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private static final String BIZ_ID_PREFIX = "AI-TASK-";
 
+    private static final Pattern PAGE_TEXT_PATTERN = Pattern.compile("(?:第\\s*)?(\\d+)\\s*页");
+
     private static final DateTimeFormatter NORMAL_DATE_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -65,6 +72,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private final AuditAiAnalysisPersistenceService persistenceService;
 
+    private final AuditAiReportPreviewService reportPreviewService;
+
     private final AuditAiQueuePositionService auditAiQueuePositionService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -74,6 +83,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             AuditAiMapper auditAiMapper, AuditAiFlowStageMapper auditAiFlowStageMapper,
             AuditWorkflowCallbackEventMapper callbackEventMapper,
             AuditAiAnalysisPersistenceService persistenceService,
+            AuditAiReportPreviewService reportPreviewService,
             AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.properties = properties;
@@ -82,6 +92,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         this.auditAiFlowStageMapper = auditAiFlowStageMapper;
         this.callbackEventMapper = callbackEventMapper;
         this.persistenceService = persistenceService;
+        this.reportPreviewService = reportPreviewService;
         this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
 
@@ -179,6 +190,53 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         }
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void handleStageCallback(AuditWorkflowCallback callback, String authorization)
+    {
+        validateCallbackToken(authorization);
+        if (callback == null || StringUtils.isBlank(callback.getBizId()))
+        {
+            throw new AuditWorkflowException("工作流阶段回调缺少 biz_id");
+        }
+        Long aiTaskId = parseAiTaskId(callback.getBizId());
+        AuditAiTask task = auditAiMapper.selectAuditAiTaskById(aiTaskId);
+        if (task == null)
+        {
+            throw new AuditWorkflowException("阶段回调对应的AI任务不存在：" + callback.getBizId());
+        }
+        if (isTerminalTaskStatus(task.getTaskStatus()))
+        {
+            log.info("Audit workflow stage callback ignored for terminal task, aiTaskId={}, taskStatus={}",
+                    aiTaskId, task.getTaskStatus());
+            return;
+        }
+
+        String workflowTaskId = resolveWorkflowTaskId(callback);
+        String runId = StringUtils.defaultIfBlank(workflowTaskId, fallbackRunId(callback, aiTaskId));
+        String callbackEventId = resolveCallbackEventId(callback, runId);
+        if (!tryMarkCallbackProcessing(callbackEventId, aiTaskId, workflowTaskId, toJson(callback)))
+        {
+            log.info("Duplicate audit workflow stage callback ignored, callbackEventId={}, aiTaskId={}",
+                    callbackEventId, aiTaskId);
+            return;
+        }
+
+        try
+        {
+            saveFlowStageProgress(aiTaskId, runId, workflowTaskId, resolveWorkflowTaskNo(callback), callback,
+                    "workflow-stage-callback");
+            updateStageCallbackTaskProgress(aiTaskId, callback, "workflow-stage-callback");
+            callbackEventMapper.updateAuditWorkflowCallbackEventStatus(callbackEventId, "processed", null);
+        }
+        catch (RuntimeException e)
+        {
+            callbackEventMapper.updateAuditWorkflowCallbackEventStatus(callbackEventId, "failed",
+                    truncate(e.getMessage(), 1000));
+            throw e;
+        }
+    }
+
     private boolean tryMarkCallbackProcessing(String callbackEventId, Long aiTaskId, String workflowTaskId,
             String rawPayload)
     {
@@ -195,7 +253,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         }
         catch (DuplicateKeyException e)
         {
-            return false;
+            return callbackEventMapper.retryFailedAuditWorkflowCallbackEvent(callbackEventId, aiTaskId,
+                    workflowTaskId, rawPayload) > 0;
         }
     }
 
@@ -221,7 +280,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             AuditWorkflowCallback callback, String operator)
     {
         List<AuditAiFlowStage> stages = mapFlowStages(aiTaskId, runId, workflowTaskId, workflowTaskNo,
-                callback, operator);
+                callback, operator, true);
         if (stages.isEmpty())
         {
             return;
@@ -230,11 +289,54 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         auditAiFlowStageMapper.insertAuditAiFlowStageBatch(stages);
     }
 
+    private void saveFlowStageProgress(Long aiTaskId, String runId, String workflowTaskId, String workflowTaskNo,
+            AuditWorkflowCallback callback, String operator)
+    {
+        List<AuditAiFlowStage> incomingStages = mapFlowStages(aiTaskId, runId, workflowTaskId, workflowTaskNo,
+                callback, operator, false);
+        if (incomingStages.isEmpty())
+        {
+            return;
+        }
+        List<AuditAiFlowStage> existingStages =
+                auditAiFlowStageMapper.selectAuditAiFlowStageListByTaskIdAndRunId(aiTaskId, runId);
+        List<AuditAiFlowStage> mergedStages = mergeFlowStages(existingStages, incomingStages);
+        auditAiFlowStageMapper.deleteAuditAiFlowStageByTaskIdAndRunId(aiTaskId, runId);
+        auditAiFlowStageMapper.insertAuditAiFlowStageBatch(mergedStages);
+    }
+
+    private List<AuditAiFlowStage> mergeFlowStages(List<AuditAiFlowStage> existingStages,
+            List<AuditAiFlowStage> incomingStages)
+    {
+        Map<String, AuditAiFlowStage> stageMap = new LinkedHashMap<>();
+        for (AuditAiFlowStage stage : existingStages)
+        {
+            stageMap.put(flowStageMergeKey(stage), stage);
+        }
+        for (AuditAiFlowStage stage : incomingStages)
+        {
+            stageMap.put(flowStageMergeKey(stage), stage);
+        }
+        return new ArrayList<>(stageMap.values());
+    }
+
+    private String flowStageMergeKey(AuditAiFlowStage stage)
+    {
+        String key = StringUtils.defaultIfBlank(stage.getStageInstanceId(), stage.getStageCode());
+        return StringUtils.defaultIfBlank(key, stage.getStageName());
+    }
+
+    private void updateStageCallbackTaskProgress(Long aiTaskId, AuditWorkflowCallback callback, String operator)
+    {
+        String progressText = StringUtils.defaultIfBlank(callback.getProgressText(), "工作流执行中");
+        auditAiMapper.updateAuditAiTaskStageProgress(aiTaskId, callback.getProgressPercent(), progressText, operator);
+    }
+
     private List<AuditAiFlowStage> mapFlowStages(Long aiTaskId, String runId, String workflowTaskId,
-            String workflowTaskNo, AuditWorkflowCallback callback, String operator)
+            String workflowTaskNo, AuditWorkflowCallback callback, String operator, boolean buildFailureFallback)
     {
         List<AuditWorkflowStage> source = callback.getStages();
-        if ((source == null || source.isEmpty()) && !isCallbackSuccess(callback))
+        if (buildFailureFallback && (source == null || source.isEmpty()) && !isCallbackSuccess(callback))
         {
             source = Collections.singletonList(buildFallbackFailedStage(callback));
         }
@@ -319,8 +421,16 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         input.put("file_id", String.valueOf(task.getAiTaskId()));
         input.put("file_url", toPublicFileUrl(task.getReportFileUrl()));
         input.put("file_name", StringUtils.defaultIfBlank(task.getReportFileName(), task.getProductName()));
-        input.put("file_type", extractFileType(task.getReportFileName(), task.getReportFileUrl()));
-        input.put("metadata", buildMetadata(task));
+        String fileType = extractFileType(task.getReportFileName(), task.getReportFileUrl());
+        input.put("file_type", fileType);
+        Map<String, Object> metadata = buildMetadata(task);
+        String previewPdfUrl = resolvePreviewPdfUrl(task, fileType);
+        if (StringUtils.isNotBlank(previewPdfUrl))
+        {
+            input.put("preview_pdf_url", previewPdfUrl);
+            metadata.put("preview_pdf_url", previewPdfUrl);
+        }
+        input.put("metadata", metadata);
         if (hasBasisFiles(task))
         {
             input.put("basis_files", buildBasisFiles(task.getBasisFileUrls()));
@@ -331,6 +441,31 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         }
         input.put("caller_context", buildCallerContext(operator));
         return input;
+    }
+
+    private String resolvePreviewPdfUrl(AuditAiTask task, String fileType)
+    {
+        if (!"doc".equals(fileType) && !"docx".equals(fileType))
+        {
+            return "";
+        }
+        try
+        {
+            AuditAiReportPreview preview = reportPreviewService.getReportPreview(task.getAiTaskId());
+            if (preview == null || StringUtils.isBlank(preview.getPreviewFileUrl()))
+            {
+                throw new AuditWorkflowException("报告预览PDF生成失败，未返回预览文件地址");
+            }
+            return toPublicFileUrl(preview.getPreviewFileUrl());
+        }
+        catch (AuditWorkflowException e)
+        {
+            throw e;
+        }
+        catch (Exception e)
+        {
+            throw new AuditWorkflowException("报告预览PDF生成失败：" + e.getMessage());
+        }
     }
 
     private String selectWorkflowCode(AuditAiTask task)
@@ -487,6 +622,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
                                     issue.path("title").asText("")))));
             finding.setSeverity(severity);
             finding.setLocation(toTextOrJson(issue.path("location")));
+            finding.setPageNo(resolvePageNo(issue));
+            finding.setLocationJson(toJson(issue.path("location")));
             finding.setSuggestion(issue.path("suggestion").asText(""));
             findings.add(finding);
         }
@@ -497,6 +634,11 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
     {
         return "SUCCESS".equalsIgnoreCase(callback.getTaskStatus())
                 || "completed".equalsIgnoreCase(callback.getStatus());
+    }
+
+    private boolean isTerminalTaskStatus(String taskStatus)
+    {
+        return "completed".equals(taskStatus) || "failed".equals(taskStatus);
     }
 
     private String resolveWorkflowTaskId(AuditWorkflowCallback callback)
@@ -761,6 +903,80 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             return node.asText("");
         }
         return toJson(node);
+    }
+
+    private Integer resolvePageNo(JsonNode issue)
+    {
+        JsonNode locationNode = issue.path("location");
+        Integer pageNo = firstPositiveInt(locationNode.path("page"), locationNode.path("pageNo"),
+                locationNode.path("page_no"), issue.path("page"), issue.path("pageNo"), issue.path("page_no"));
+        if (pageNo != null)
+        {
+            return pageNo;
+        }
+        return parsePageNoFromText(toTextOrJson(locationNode));
+    }
+
+    private Integer firstPositiveInt(JsonNode... nodes)
+    {
+        for (JsonNode node : nodes)
+        {
+            Integer value = toPositiveInt(node);
+            if (value != null)
+            {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Integer toPositiveInt(JsonNode node)
+    {
+        if (node == null || node.isMissingNode() || node.isNull())
+        {
+            return null;
+        }
+        if (node.isInt() || node.isLong())
+        {
+            int value = node.asInt();
+            return value > 0 ? value : null;
+        }
+        String text = node.asText("");
+        if (StringUtils.isBlank(text))
+        {
+            return null;
+        }
+        try
+        {
+            int value = Integer.parseInt(text.trim());
+            return value > 0 ? value : null;
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
+    }
+
+    private Integer parsePageNoFromText(String text)
+    {
+        if (StringUtils.isBlank(text))
+        {
+            return null;
+        }
+        Matcher matcher = PAGE_TEXT_PATTERN.matcher(text);
+        if (!matcher.find())
+        {
+            return null;
+        }
+        try
+        {
+            int value = Integer.parseInt(matcher.group(1));
+            return value > 0 ? value : null;
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
     }
 
     private String truncate(String value, int maxLength)

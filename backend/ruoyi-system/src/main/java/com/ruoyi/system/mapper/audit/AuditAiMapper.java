@@ -91,6 +91,11 @@ public interface AuditAiMapper
             @Param("progressText") String progressText,
             @Param("updateBy") String updateBy);
 
+    int updateAuditAiTaskStageProgress(@Param("aiTaskId") Long aiTaskId,
+            @Param("progressPercent") Integer progressPercent,
+            @Param("progressText") String progressText,
+            @Param("updateBy") String updateBy);
+
     /**
      * 将 AI 任务重新提交到等待队列
      *

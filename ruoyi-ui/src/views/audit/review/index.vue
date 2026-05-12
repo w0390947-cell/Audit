@@ -200,6 +200,7 @@
               :dropzone="true"
               button-text="上传文件"
               drop-hint="拖放文件"
+              @upload-success="handleBasisUploadSuccess"
             />
           </div>
         </el-form-item>
@@ -465,6 +466,7 @@ export default {
         priority: 'medium',
         mainReportUrls: '',
         basisFileUrls: '',
+        basisUploadedFiles: [],
         appendixFileUrls: '',
         reviewStatus: 'reviewing',
         taskStatus: 'uploaded',
@@ -505,6 +507,7 @@ export default {
           priority: data.priority || 'medium',
           mainReportUrls: data.mainReportUrls || '',
           basisFileUrls: data.basisFileUrls || '',
+          basisUploadedFiles: [],
           appendixFileUrls: data.appendixFileUrls || '',
           reviewStatus: data.reviewStatus,
           taskStatus: data.taskStatus,
@@ -526,6 +529,28 @@ export default {
           this.open = false
           this.getList()
         })
+      })
+    },
+    handleBasisUploadSuccess(payload) {
+      if (!payload || !payload.response) {
+        return
+      }
+      const response = payload.response
+      const fileUrl = response.fileName || ''
+      if (!fileUrl) {
+        return
+      }
+      if (!Array.isArray(this.form.basisUploadedFiles)) {
+        this.$set(this.form, 'basisUploadedFiles', [])
+      }
+      if (this.form.basisUploadedFiles.some(item => item.fileUrl === fileUrl)) {
+        return
+      }
+      this.form.basisUploadedFiles.push({
+        fileUrl,
+        fileName: response.newFileName || this.getFileNameFromUrl(fileUrl),
+        originalFilename: response.originalFilename || payload.file?.name || this.getFileNameFromUrl(fileUrl),
+        fileSize: payload.fileSize || ''
       })
     },
     handleDetail(row) {

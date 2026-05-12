@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 public class AuditVectorTaskServiceImpl implements AuditVectorTaskService
 {
     private static final String RESOURCE_STATUS_PENDING = "pending";
+    private static final int RESOURCE_PROGRESS_TEXT_MAX_LENGTH = 255;
 
     private final AuditVectorTaskMapper auditVectorTaskMapper;
     private final AuditLibraryMapper auditLibraryMapper;
@@ -255,9 +256,16 @@ public class AuditVectorTaskServiceImpl implements AuditVectorTaskService
         AuditCommonResource update = new AuditCommonResource();
         update.setResourceId(resourceId);
         update.setStorageStatus(storageStatus);
-        update.setProgressText(progressText);
+        update.setProgressText(safeProgressText(progressText));
         update.setUpdateBy(operator);
         auditLibraryMapper.updateAuditCommonResource(update);
+    }
+
+    private String safeProgressText(String message)
+    {
+        String safeMessage = StringUtils.defaultString(message);
+        return safeMessage.length() > RESOURCE_PROGRESS_TEXT_MAX_LENGTH
+                ? safeMessage.substring(0, RESOURCE_PROGRESS_TEXT_MAX_LENGTH) : safeMessage;
     }
 
     private String safeError(String message)

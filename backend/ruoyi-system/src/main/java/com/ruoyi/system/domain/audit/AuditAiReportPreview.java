@@ -10,6 +10,8 @@ public class AuditAiReportPreview
 
     private String fileType;
 
+    private Integer pageCount;
+
     public String getFileName()
     {
         return fileName;
@@ -48,5 +50,15 @@ public class AuditAiReportPreview
     public void setFileType(String fileType)
     {
         this.fileType = fileType;
+    }
+
+    public Integer getPageCount()
+    {
+        return pageCount;
+    }
+
+    public void setPageCount(Integer pageCount)
+    {
+        this.pageCount = pageCount;
     }
 }

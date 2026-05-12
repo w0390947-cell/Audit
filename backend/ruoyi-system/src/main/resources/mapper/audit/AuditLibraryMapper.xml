@@ -188,6 +188,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 and (document_name like concat('%', #{keyword}, '%')
                     or file_name like concat('%', #{keyword}, '%'))
             </if>
+            <if test="fileUrl != null and fileUrl != ''">
+                and file_url = #{fileUrl}
+            </if>
             <if test="storageStatus != null and storageStatus != ''">
                 and storage_status = #{storageStatus}
             </if>

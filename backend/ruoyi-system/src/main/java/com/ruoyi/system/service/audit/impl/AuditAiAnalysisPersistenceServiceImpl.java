@@ -70,6 +70,8 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
             finding.setFindingType(defaultIfBlank(item.getType(), "其他"));
             finding.setFindingTitle(defaultIfBlank(item.getTitle(), "AI发现问题"));
             finding.setFindingContent(buildFindingContent(item));
+            finding.setPageNo(item.getPageNo());
+            finding.setLocationJson(item.getLocationJson());
             finding.setSortNum(sort++);
             auditAiMapper.insertAuditAiFinding(finding);
         }

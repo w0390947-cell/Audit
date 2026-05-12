@@ -36,4 +36,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             update_time = sysdate()
         where callback_event_id = #{callbackEventId}
     </update>
+
+    <update id="retryFailedAuditWorkflowCallbackEvent">
+        update audit_workflow_callback_event
+        set event_status = 'processing',
+            ai_task_id = #{aiTaskId},
+            workflow_task_id = #{workflowTaskId},
+            raw_payload = #{rawPayload},
+            error_message = null,
+            update_time = sysdate()
+        where callback_event_id = #{callbackEventId}
+          and event_status = 'failed'
+    </update>
 </mapper>

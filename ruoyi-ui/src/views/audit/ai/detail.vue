@@ -93,6 +93,7 @@
           <div class="report-shell" v-loading="previewLoading">
             <object
               v-if="previewReady"
+              :key="previewViewerKey"
               :data="previewViewerSrc"
               type="application/pdf"
               class="preview-frame"
@@ -115,10 +116,19 @@
         <div class="section-card">
           <div class="section-title">检测结果</div>
           <div v-if="displayIssueList.length">
-            <div v-for="(item, index) in displayIssueList" :key="item.issueId || index" class="issue-card">
+            <div
+              v-for="(item, index) in displayIssueList"
+              :key="issueKey(item, index)"
+              :class="['issue-card', 'issue-card-clickable', { 'issue-card-active': selectedIssueKey === issueKey(item, index) }]"
+              role="button"
+              tabindex="0"
+              @click="handleIssueClick(item, index)"
+              @keyup.enter="handleIssueClick(item, index)"
+            >
               <div class="issue-title" :class="{ 'format': index > 0 }">
                 <i class="el-icon-warning" />
                 <span>{{ item.issueTitle || '识别异常类型' }}</span>
+                <span v-if="resolveIssuePage(item)" class="issue-page-tag">第{{ resolveIssuePage(item) }}页</span>
               </div>
               <div v-for="(line, lineIndex) in issueLines(item)" :key="'issue_' + index + '_' + lineIndex" class="issue-line">
                 {{ line }}
@@ -191,8 +201,12 @@ export default {
       reviewForm: {
         reviewOpinion: ''
       },
+      currentPreviewPage: null,
+      previewJumpSeq: 0,
+      selectedIssueKey: '',
       stageLogOpen: false,
-      currentStageLog: null
+      currentStageLog: null,
+      detailPollTimer: null
     }
   },
   computed: {
@@ -207,7 +221,10 @@ export default {
       if (!this.previewReady) {
         return ''
       }
-      return this.toAbsoluteUrl(this.previewInfo.previewFileUrl)
+      return this.withPdfPageHash(this.toAbsoluteUrl(this.previewInfo.previewFileUrl), this.currentPreviewPage)
+    },
+    previewViewerKey() {
+      return this.previewViewerSrc + ':' + this.previewJumpSeq
     },
     previewEmptyText() {
       if (this.previewLoading) {
@@ -222,12 +239,10 @@ export default {
       return '暂无可预览报告'
     },
     aiFlowStageList() {
-      return [
-        this.buildQueueStage(),
-        this.buildAnalysisStage(),
-        this.buildResultStage(),
-        this.buildReviewStage()
-      ]
+      const missingStages = this.flowStageMissingContext()
+      return this.compactFlowStageList([]).map(stage => {
+        return this.buildMissingFlowStage(stage, missingStages[stage.stageCode])
+      })
     },
     displayAiFlowStageList() {
       if (Array.isArray(this.detail.flowStageList) && this.detail.flowStageList.length) {
@@ -242,11 +257,10 @@ export default {
           issueId: item.findingId,
           issueType: item.findingType,
           issueTitle: this.formatFindingTitle(item),
-          issueContent: item.findingContent
+          issueContent: item.findingContent,
+          pageNo: item.pageNo,
+          locationJson: item.locationJson
         }))
-      }
-      if (Array.isArray(this.reviewDetail.issueList) && this.reviewDetail.issueList.length) {
-        return this.reviewDetail.issueList
       }
       return []
     }
@@ -257,8 +271,15 @@ export default {
   activated() {
     this.ensureRouteAndFetch()
   },
+  deactivated() {
+    this.stopDetailPolling()
+  },
+  beforeDestroy() {
+    this.stopDetailPolling()
+  },
   watch: {
     '$route.params.aiTaskId'() {
+      this.stopDetailPolling()
       this.ensureRouteAndFetch()
     }
   },
@@ -585,103 +606,146 @@ export default {
       this.currentStageLog = item
       this.stageLogOpen = true
     },
-    buildQueueStage() {
-      const done = !!(this.detail.aiTaskId || this.detail.taskNo)
-      return {
-        stageCode: 'queued',
-        stageName: '任务入队',
-        status: done ? 'done' : 'pending',
-        statusText: done ? '已完成' : '未开始',
-        timeText: this.parseTime(this.detail.submitTime, '{y}-{m}-{d} {h}:{i}:{s}') || '--',
-        summary: done ? 'AI任务已创建并进入处理队列' : '等待创建AI任务',
-        lines: [
-          '提交人：' + this.displayValue(this.detail.submitter),
-          '优先级：' + (this.detail.priority ? this.priorityLabel(this.detail.priority) : '--'),
-          '任务状态：' + this.taskStatusLabel(this.detail.taskStatus)
-        ]
-      }
-    },
-    buildAnalysisStage() {
+    flowStageMissingContext() {
       const taskStatus = this.detail.taskStatus
-      const stageStatus = this.analysisStageStatus(taskStatus)
-      const percent = this.detail.progressPercent === null || this.detail.progressPercent === undefined
-        ? 0
-        : this.detail.progressPercent
-      return {
-        stageCode: 'analysis',
-        stageName: 'AI分析执行',
-        status: stageStatus,
-        statusText: this.flowStatusLabel(stageStatus),
-        timeText: this.displayValue(this.detail.estimatedDuration),
-        summary: this.detail.progressText || this.analysisStageSummary(taskStatus),
-        lines: [
-          '执行进度：' + percent + '%',
-          '执行说明：' + this.displayValue(this.detail.progressText),
-          '预计执行时间：' + this.displayValue(this.detail.estimatedDuration)
-        ]
-      }
-    },
-    buildResultStage() {
-      const findingCount = Array.isArray(this.detail.findingList) ? this.detail.findingList.length : 0
-      const taskStatus = this.detail.taskStatus
-      const stageStatus = this.resultStageStatus(taskStatus, findingCount)
-      return {
-        stageCode: 'result',
-        stageName: '结果生成',
-        status: stageStatus,
-        statusText: this.flowStatusLabel(stageStatus),
-        timeText: this.parseTime(this.detail.updateTime, '{y}-{m}-{d} {h}:{i}:{s}') || '--',
-        summary: this.resultStageSummary(taskStatus, findingCount),
-        lines: [
-          '检测结果数量：' + findingCount,
-          'AI摘要：' + this.displayValue(this.detail.aiSummary)
-        ]
-      }
-    },
-    buildReviewStage() {
-      const stageStatus = this.reviewStageStatus(this.detail.reviewStatus)
-      return {
-        stageCode: 'review',
-        stageName: '人工复核',
-        status: stageStatus,
-        statusText: this.reviewStatusLabel(this.detail.reviewStatus),
-        timeText: this.parseTime(this.detail.updateTime, '{y}-{m}-{d} {h}:{i}:{s}') || '--',
-        summary: this.reviewStageSummary(this.detail.reviewStatus),
-        lines: [
-          '复核人：' + this.displayValue(this.detail.reviewer),
-          '复核意见：' + this.displayValue(this.detail.reviewOpinion)
-        ]
-      }
-    },
-    analysisStageStatus(taskStatus) {
       if (taskStatus === 'completed') {
-        return 'done'
+        return {
+          task_receive: {
+            status: 'done',
+            summary: '任务已接收',
+            lines: ['未收到任务接收阶段日志。']
+          },
+          content_parse: {
+            status: 'done',
+            summary: '内容解析已完成',
+            lines: ['未收到文件解析、文本切分等阶段日志。']
+          },
+          audit_analysis: {
+            status: 'done',
+            summary: '审核分析已完成',
+            lines: ['未收到知识检索、AI审核等阶段日志。']
+          },
+          result_process: {
+            status: 'done',
+            summary: '结果处理已完成',
+            lines: ['未收到结果保存、回调处理等阶段日志。']
+          }
+        }
+      }
+      if (taskStatus === 'failed') {
+        return {
+          task_receive: {
+            status: 'done',
+            summary: '任务已接收',
+            lines: ['未收到任务接收阶段日志。']
+          },
+          content_parse: {
+            status: 'unknown',
+            summary: '阶段状态未知',
+            lines: ['任务已失败，但未收到内容解析阶段日志，无法确认该阶段是否完成。']
+          },
+          audit_analysis: {
+            status: 'unknown',
+            summary: '阶段状态未知',
+            lines: ['任务已失败，但未收到审核分析阶段日志，无法确认失败是否发生在该阶段。']
+          },
+          result_process: {
+            status: 'unknown',
+            summary: '阶段状态未知',
+            lines: ['任务已失败，但未收到结果处理阶段日志，无法确认结果是否写入完成。']
+          }
+        }
       }
       if (taskStatus === 'executing') {
-        return 'running'
-      }
-      if (taskStatus === 'waiting') {
-        return 'waiting'
+        return {
+          task_receive: {
+            status: 'done',
+            summary: '任务已接收',
+            lines: ['未收到任务接收阶段日志。']
+          },
+          content_parse: {
+            status: 'waiting',
+            summary: '等待阶段回调',
+            lines: ['工作流执行中，等待内容解析阶段回传真实状态。']
+          },
+          audit_analysis: {
+            status: 'waiting',
+            summary: '等待阶段回调',
+            lines: ['工作流执行中，等待审核分析阶段回传真实状态。']
+          },
+          result_process: {
+            status: 'waiting',
+            summary: '等待阶段回调',
+            lines: ['工作流执行中，等待结果处理阶段回传真实状态。']
+          }
+        }
       }
       if (taskStatus === 'paused') {
-        return 'paused'
+        return {
+          task_receive: {
+            status: 'done',
+            summary: '任务已接收',
+            lines: ['未收到任务接收阶段日志。']
+          },
+          content_parse: {
+            status: 'paused',
+            summary: '任务已暂停',
+            lines: ['未收到内容解析阶段日志，恢复执行后等待工作流回传真实状态。']
+          },
+          audit_analysis: {
+            status: 'paused',
+            summary: '任务已暂停',
+            lines: ['未收到审核分析阶段日志，恢复执行后等待工作流回传真实状态。']
+          },
+          result_process: {
+            status: 'paused',
+            summary: '任务已暂停',
+            lines: ['未收到结果处理阶段日志，恢复执行后等待工作流回传真实状态。']
+          }
+        }
       }
-      if (taskStatus === 'failed') {
-        return 'failed'
+      return {
+        task_receive: {
+          status: this.detail.aiTaskId || this.detail.taskNo ? 'done' : 'pending',
+          summary: this.detail.aiTaskId || this.detail.taskNo ? '任务已接收' : '等待任务接收',
+          lines: ['未收到任务接收阶段日志。']
+        },
+        content_parse: {
+          status: 'waiting',
+          summary: '等待内容解析',
+          lines: ['工作流尚未回传内容解析阶段状态。']
+        },
+        audit_analysis: {
+          status: 'waiting',
+          summary: '等待审核分析',
+          lines: ['工作流尚未回传审核分析阶段状态。']
+        },
+        result_process: {
+          status: 'waiting',
+          summary: '等待结果处理',
+          lines: ['工作流尚未回传结果处理阶段状态。']
+        }
       }
-      return 'pending'
     },
-    resultStageStatus(taskStatus, findingCount) {
-      if (findingCount > 0 || taskStatus === 'completed') {
-        return 'done'
+    buildMissingFlowStage(stage, context) {
+      const stageContext = context || {
+        status: 'unknown',
+        summary: '阶段状态未知',
+        lines: ['未收到该阶段日志。']
       }
-      if (taskStatus === 'failed') {
-        return 'failed'
+      return {
+        ...stage,
+        status: stageContext.status,
+        statusText: this.flowStatusLabel(stageContext.status),
+        timeText: '--',
+        summary: stageContext.summary,
+        lines: stageContext.lines,
+        children: [],
+        outputText: '',
+        errorMessage: '',
+        stageDetail: '',
+        hasLog: false
       }
-      if (taskStatus === 'executing') {
-        return 'waiting'
-      }
-      return 'pending'
     },
     reviewStageStatus(reviewStatus) {
       if (reviewStatus === 'approved') {
@@ -702,6 +766,7 @@ export default {
         waiting: '等待中',
         paused: '已暂停',
         failed: '已失败',
+        unknown: '状态未知',
         pending: '未开始'
       }
       return map[status] || '--'
@@ -719,6 +784,9 @@ export default {
       if (status === 'paused') {
         return 'el-icon-warning'
       }
+      if (status === 'unknown') {
+        return 'el-icon-warning-outline'
+      }
       return 'el-icon-time'
     },
     taskStatusLabel(taskStatus) {
@@ -730,31 +798,6 @@ export default {
         failed: '已失败'
       }
       return map[taskStatus] || '--'
-    },
-    analysisStageSummary(taskStatus) {
-      const map = {
-        waiting: 'AI任务正在等待调度',
-        executing: 'AI任务正在执行分析',
-        paused: 'AI任务已暂停',
-        completed: 'AI分析已完成',
-        failed: 'AI分析执行失败'
-      }
-      return map[taskStatus] || 'AI分析尚未开始'
-    },
-    resultStageSummary(taskStatus, findingCount) {
-      if (findingCount > 0) {
-        return '已生成' + findingCount + '条检测结果'
-      }
-      if (taskStatus === 'completed') {
-        return 'AI分析已完成，未发现异常或暂无结构化问题'
-      }
-      if (taskStatus === 'failed') {
-        return 'AI分析失败，未生成检测结果'
-      }
-      if (taskStatus === 'executing') {
-        return '等待AI分析完成后生成结果'
-      }
-      return '检测结果尚未生成'
     },
     reviewStatusLabel(reviewStatus) {
       if (reviewStatus === 'approved') {
@@ -791,6 +834,9 @@ export default {
       this.loading = true
       this.previewInfo = null
       this.previewError = ''
+      this.currentPreviewPage = null
+      this.previewJumpSeq = 0
+      this.selectedIssueKey = ''
       this.reviewDetail = {
         stageList: [],
         issueList: [],
@@ -799,6 +845,7 @@ export default {
       getAiTask(this.currentAiTaskId).then(response => {
         this.detail = response.data || { findingList: [] }
         this.reviewForm.reviewOpinion = this.detail.reviewOpinion || ''
+        this.syncDetailPolling()
         this.getReviewDetail().then(() => {
           this.loading = false
         })
@@ -806,6 +853,43 @@ export default {
       }).catch(() => {
         this.loading = false
       })
+    },
+    refreshDetailForPolling() {
+      if (!this.currentAiTaskId || this.loading) {
+        return
+      }
+      getAiTask(this.currentAiTaskId).then(response => {
+        this.detail = response.data || { findingList: [] }
+        this.reviewForm.reviewOpinion = this.detail.reviewOpinion || ''
+        this.syncDetailPolling()
+      }).catch(() => {
+        this.stopDetailPolling()
+      })
+    },
+    syncDetailPolling() {
+      if (this.shouldPollDetail()) {
+        this.startDetailPolling()
+      } else {
+        this.stopDetailPolling()
+      }
+    },
+    shouldPollDetail() {
+      return this.detail.taskStatus === 'waiting' || this.detail.taskStatus === 'executing'
+    },
+    startDetailPolling() {
+      if (this.detailPollTimer) {
+        return
+      }
+      this.detailPollTimer = setInterval(() => {
+        this.refreshDetailForPolling()
+      }, 5000)
+    },
+    stopDetailPolling() {
+      if (!this.detailPollTimer) {
+        return
+      }
+      clearInterval(this.detailPollTimer)
+      this.detailPollTimer = null
     },
     getReviewDetail() {
       if (!this.detail.reviewTaskId) {
@@ -832,6 +916,7 @@ export default {
       if (!this.currentAiTaskId || !this.detail.reportFileUrl) {
         this.previewInfo = null
         this.previewError = ''
+        this.currentPreviewPage = null
         return
       }
       this.previewLoading = true
@@ -852,6 +937,86 @@ export default {
       }
       window.open(encodeURI(this.detail.reportFileUrl))
     },
+    handleIssueClick(item, index) {
+      const page = this.resolveIssuePage(item)
+      if (!page || !this.jumpToReportPage(page)) {
+        this.$message.warning('暂无定位信息')
+        return
+      }
+      this.selectedIssueKey = this.issueKey(item, index)
+    },
+    jumpToReportPage(page) {
+      const pageNo = this.normalizePageNo(page)
+      if (!pageNo || !this.previewReady) {
+        return false
+      }
+      const totalPages = this.previewTotalPages()
+      if (totalPages && pageNo > totalPages) {
+        return false
+      }
+      this.currentPreviewPage = pageNo
+      this.previewJumpSeq += 1
+      return true
+    },
+    previewTotalPages() {
+      const candidates = [
+        this.previewInfo && this.previewInfo.totalPages,
+        this.previewInfo && this.previewInfo.pageCount,
+        this.previewInfo && this.previewInfo.pages
+      ]
+      for (const item of candidates) {
+        const page = this.normalizePageNo(item)
+        if (page) {
+          return page
+        }
+      }
+      return null
+    },
+    resolveIssuePage(item) {
+      if (!item) {
+        return null
+      }
+      const location = this.parseLocationJson(item.locationJson) || item.location || {}
+      const candidates = [
+        location.page,
+        location.pageNo,
+        location.page_no,
+        item.page,
+        item.pageNo,
+        item.page_no
+      ]
+      for (const candidate of candidates) {
+        const page = this.normalizePageNo(candidate)
+        if (page) {
+          return page
+        }
+      }
+      return null
+    },
+    parseLocationJson(value) {
+      if (!value) {
+        return null
+      }
+      if (typeof value === 'object') {
+        return value
+      }
+      try {
+        const parsed = JSON.parse(value)
+        return parsed && typeof parsed === 'object' ? parsed : null
+      } catch (e) {
+        return null
+      }
+    },
+    normalizePageNo(value) {
+      if (value === null || value === undefined || value === '') {
+        return null
+      }
+      const page = Number(value)
+      if (!Number.isInteger(page) || page < 1) {
+        return null
+      }
+      return page
+    },
     toAbsoluteUrl(url) {
       if (!url) {
         return ''
@@ -861,6 +1026,19 @@ export default {
       } catch (e) {
         return url
       }
+    },
+    withPdfPageHash(url, page) {
+      if (!url) {
+        return ''
+      }
+      const pageNo = this.normalizePageNo(page)
+      if (!pageNo) {
+        return url
+      }
+      return url.split('#')[0] + '#page=' + pageNo
+    },
+    issueKey(item, index) {
+      return String(item.issueId || item.issueKey || item.id || index)
     },
     splitStructuredText(text) {
       if (!text) {
@@ -1154,6 +1332,11 @@ export default {
   color: #e6a23c;
 }
 
+.stage-node.stage-unknown {
+  border-color: #e6a23c;
+  color: #e6a23c;
+}
+
 .stage-node.stage-failed {
   border-color: #f56c6c;
   color: #f56c6c;
@@ -1197,6 +1380,10 @@ export default {
 }
 
 .stage-status-paused {
+  color: #e6a23c;
+}
+
+.stage-status-unknown {
   color: #e6a23c;
 }
 
@@ -1283,6 +1470,23 @@ export default {
   padding: 14px 16px 12px;
 }
 
+.issue-card-clickable {
+  cursor: pointer;
+  outline: none;
+  transition: border-color .2s, box-shadow .2s, background-color .2s;
+}
+
+.issue-card-clickable:hover,
+.issue-card-clickable:focus {
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, .12);
+}
+
+.issue-card-active {
+  border-color: #409eff;
+  background: #f5faff;
+}
+
 .issue-card + .issue-card {
   margin-top: 10px;
 }
@@ -1295,6 +1499,22 @@ export default {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 8px;
+}
+
+.issue-title span:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+
+.issue-page-tag {
+  flex: none;
+  color: #409eff;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .issue-title.format {

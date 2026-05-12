@@ -11,4 +11,6 @@ public interface IAuditWorkflowAuditService
     FastGptAuditResult analyze(AuditAiTask task, String operator);
 
     void handleCallback(AuditWorkflowCallback callback, String authorization);
+
+    void handleStageCallback(AuditWorkflowCallback callback, String authorization);
 }

@@ -164,6 +164,13 @@
                 v-hasPermi="['audit:ai:changeStatus']"
               >{{ scope.row.taskStatus === 'paused' ? '恢复' : '暂停' }}</el-button>
               <el-button
+                v-if="scope.row.taskStatus === 'failed'"
+                size="mini"
+                type="text"
+                @click="handleRetry(scope.row)"
+                v-hasPermi="['audit:ai:analyze']"
+              >重试</el-button>
+              <el-button
                 size="mini"
                 type="text"
                 class="delete-btn"
@@ -195,7 +202,8 @@ import {
   getAiStats,
   listAiSubmitters,
   listAiTask,
-  raiseAiPriority
+  raiseAiPriority,
+  retryAiTask
 } from '@/api/audit/ai'
 
 export default {
@@ -390,6 +398,19 @@ export default {
     },
     canChangeRowStatus(row) {
       return row.taskStatus === 'waiting' || row.taskStatus === 'paused'
+    },
+    handleRetry(row) {
+      if (!row || row.taskStatus !== 'failed') {
+        this.$message.warning('只有失败的任务可以重试')
+        return
+      }
+      this.$modal.confirm('是否确认重试该 AI 任务？').then(() => {
+        return retryAiTask(row.aiTaskId)
+      }).then(() => {
+        this.$modal.msgSuccess('任务已重新提交')
+        this.getStats()
+        this.getList()
+      }).catch(() => {})
     },
     handleRaisePriority(row) {
       const aiTaskIds = row ? [row.aiTaskId] : this.ids

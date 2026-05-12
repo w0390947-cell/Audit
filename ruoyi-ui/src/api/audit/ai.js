@@ -68,6 +68,14 @@ export function raiseAiPriority(data) {
   })
 }
 
+// 重试 AI 任务
+export function retryAiTask(aiTaskId) {
+  return request({
+    url: '/audit/ai/' + aiTaskId + '/analyze',
+    method: 'post'
+  })
+}
+
 // 人工审核 AI 任务
 export function reviewAiTask(data) {
   return request({

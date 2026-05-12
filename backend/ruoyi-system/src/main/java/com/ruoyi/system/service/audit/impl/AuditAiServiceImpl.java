@@ -16,6 +16,7 @@ import com.ruoyi.system.domain.audit.AuditAiStats;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
+import com.ruoyi.system.mapper.audit.AuditAiFlowStageMapper;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
 import com.ruoyi.system.mapper.audit.AuditReviewMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisService;
@@ -28,6 +29,9 @@ public class AuditAiServiceImpl implements IAuditAiService
 
     @Autowired
     private AuditAiMapper auditAiMapper;
+
+    @Autowired
+    private AuditAiFlowStageMapper auditAiFlowStageMapper;
 
     @Autowired
     private AuditReviewMapper auditReviewMapper;
@@ -54,6 +58,7 @@ public class AuditAiServiceImpl implements IAuditAiService
         if (task != null)
         {
             task.setFindingList(auditAiMapper.selectAuditAiFindingListByTaskId(aiTaskId));
+            task.setFlowStageList(auditAiFlowStageMapper.selectAuditAiFlowStageListByTaskId(aiTaskId));
         }
         return task;
     }
@@ -77,6 +82,15 @@ public class AuditAiServiceImpl implements IAuditAiService
         if (existingTask != null)
         {
             return existingTask;
+        }
+        if ("v1.0".equals(reviewVersion.getVersionNo()))
+        {
+            AuditAiTask legacyTask = auditAiMapper.selectAuditAiTaskByReviewTaskWithoutVersion(reviewTaskId);
+            if (legacyTask != null)
+            {
+                auditAiMapper.bindAuditAiTaskReviewVersion(legacyTask.getAiTaskId(), reviewVersion.getVersionId(), operator);
+                return auditAiMapper.selectAuditAiTaskById(legacyTask.getAiTaskId());
+            }
         }
 
         AuditAiTask aiTask = buildAuditAiTask(reviewTask, reviewVersion, operator);
@@ -188,6 +202,12 @@ public class AuditAiServiceImpl implements IAuditAiService
             task.setProgressPercent(100);
             task.setProgressText("人工审核已完成");
         }
+        else if ("returned".equals(task.getReviewStatus()))
+        {
+            task.setTaskStatus("completed");
+            task.setProgressPercent(100);
+            task.setProgressText("人工审核已驳回");
+        }
         else
         {
             task.setTaskStatus("waiting");
@@ -207,6 +227,10 @@ public class AuditAiServiceImpl implements IAuditAiService
         if (aiTaskIds == null || aiTaskIds.length == 0)
         {
             return 0;
+        }
+        for (Long aiTaskId : aiTaskIds)
+        {
+            auditAiFlowStageMapper.deleteAuditAiFlowStageByTaskId(aiTaskId);
         }
         auditAiMapper.deleteAuditAiFindingByTaskIds(aiTaskIds);
         int rows = auditAiMapper.deleteAuditAiTaskByIds(aiTaskIds);

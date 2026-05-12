@@ -18,6 +18,11 @@ WHERE `dict_type` = 'audit_review_status'
   AND `dict_value` = 'returned';
 
 UPDATE `sys_dict_data`
+SET `dict_label` = '驳回'
+WHERE `dict_type` = 'audit_review_status'
+  AND `dict_value` = 'returned';
+
+UPDATE `sys_dict_data`
 SET `dict_sort` = 2,
     `dict_label` = '审核中',
     `list_class` = 'primary',

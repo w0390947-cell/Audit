@@ -275,7 +275,7 @@ export default {
         return '审核通过'
       }
       if (status === 'returned') {
-        return '驳回归档'
+        return '驳回'
       }
       if (status === 'pending') {
         return '待修改'
@@ -316,7 +316,7 @@ export default {
         color: ['#3187ec', '#f05b47'],
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         legend: {
-          data: ['审核通过', '驳回归档'],
+          data: ['审核通过', '驳回'],
           top: 0,
           left: 'center',
           icon: 'circle',
@@ -341,7 +341,7 @@ export default {
         },
         series: [
           { name: '审核通过', type: 'bar', barWidth: 16, data: this.stats.yearApprovedData || [0] },
-          { name: '驳回归档', type: 'bar', barWidth: 16, data: this.stats.yearReturnedData || [0] }
+          { name: '驳回', type: 'bar', barWidth: 16, data: this.stats.yearReturnedData || [0] }
         ]
       })
       this.saveChart(chart)
@@ -352,7 +352,7 @@ export default {
         color: ['#3187ec', '#f05b47'],
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         legend: {
-          data: ['审核通过', '驳回归档'],
+          data: ['审核通过', '驳回'],
           top: 0,
           left: 'center',
           icon: 'circle',
@@ -377,7 +377,7 @@ export default {
         },
         series: [
           { name: '审核通过', type: 'bar', barWidth: 10, data: this.stats.monthApprovedData || [] },
-          { name: '驳回归档', type: 'bar', barWidth: 10, data: this.stats.monthReturnedData || [] }
+          { name: '驳回', type: 'bar', barWidth: 10, data: this.stats.monthReturnedData || [] }
         ]
       })
       this.saveChart(chart)

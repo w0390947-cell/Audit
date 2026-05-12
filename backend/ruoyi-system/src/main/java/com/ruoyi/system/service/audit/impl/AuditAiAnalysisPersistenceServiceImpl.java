@@ -45,6 +45,13 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
     @Transactional(rollbackFor = Exception.class)
     public void saveAuditResult(AuditAiTask task, FastGptAuditResult result, String operator)
     {
+        saveAuditResult(task, result, operator, true);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void saveAuditResult(AuditAiTask task, FastGptAuditResult result, String operator, boolean increaseAnalysisCount)
+    {
         Long aiTaskId = task.getAiTaskId();
         List<FastGptAuditFinding> findings = result.getFindings() == null
                 ? Collections.emptyList()
@@ -97,7 +104,14 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         update.setAiSummary(summary);
         update.setUpdateBy(operator);
 
-        auditAiMapper.updateAuditAiAnalysisResult(update);
+        if (increaseAnalysisCount)
+        {
+            auditAiMapper.updateAuditAiAnalysisResult(update);
+        }
+        else
+        {
+            auditAiMapper.updateAuditAiAnalysisResultWithoutCount(update);
+        }
         auditAiQueuePositionService.resortQueuePositions(operator);
         log.info("Task status updated to completed, aiTaskId={}", aiTaskId);
     }

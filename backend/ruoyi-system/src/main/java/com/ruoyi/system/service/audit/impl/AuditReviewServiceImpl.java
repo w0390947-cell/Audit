@@ -76,8 +76,8 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         normalizeBeforeCreate(task);
         task.setCurrentVersionNo("v1.0");
         int rows = auditReviewMapper.insertAuditReviewTask(task);
-        saveSnapshot(task, "v1.0");
-        createAuditAiTask(task);
+        AuditReviewVersion version = saveSnapshot(task, "v1.0");
+        createAuditAiTask(task, version);
         return rows;
     }
 
@@ -163,7 +163,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         task.setSubmitTime(task.getSubmitTime() == null ? DateUtils.getNowDate() : task.getSubmitTime());
     }
 
-    private void saveSnapshot(AuditReviewTask task, String versionNo)
+    private AuditReviewVersion saveSnapshot(AuditReviewTask task, String versionNo)
     {
         AuditReviewVersion version = new AuditReviewVersion();
         version.setTaskId(task.getTaskId());
@@ -192,6 +192,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         {
             auditReviewMapper.insertAuditReviewIssueBatch(issues);
         }
+        return version;
     }
 
     private AuditReviewVersion getCurrentVersion(Long taskId, Long versionId, List<AuditReviewVersion> versionList)
@@ -275,15 +276,17 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         return index > -1 ? fileUrl.substring(index + 1) : fileUrl;
     }
 
-    private void createAuditAiTask(AuditReviewTask reviewTask)
+    private void createAuditAiTask(AuditReviewTask reviewTask, AuditReviewVersion reviewVersion)
     {
-        String reportFileUrl = getPrimaryFileUrl(reviewTask.getMainReportUrls());
+        String reportFileUrl = StringUtils.defaultIfBlank(getPrimaryFileUrl(reviewVersion.getMainReportUrls()),
+                reviewVersion.getReportFileUrl());
         AuditAiTask aiTask = new AuditAiTask();
         aiTask.setReviewTaskId(reviewTask.getTaskId());
+        aiTask.setReviewVersionId(reviewVersion.getVersionId());
         aiTask.setTaskNo(reviewTask.getTaskNo());
         aiTask.setProductName(reviewTask.getProductName());
         aiTask.setDeliveryUnit(reviewTask.getDeliveryUnit());
-        aiTask.setSubmitter(reviewTask.getSponsor());
+        aiTask.setSubmitter(StringUtils.defaultIfBlank(reviewVersion.getSubmitter(), reviewTask.getSponsor()));
         aiTask.setPriority(reviewTask.getPriority());
         aiTask.setQueuePosition(auditAiQueuePositionService.nextQueuePosition());
         aiTask.setTaskStatus("waiting");
@@ -293,11 +296,12 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         aiTask.setAiAnalysisCount(0);
         aiTask.setReviewStatus(reviewTask.getReviewStatus());
         aiTask.setReportFileUrl(reportFileUrl);
-        aiTask.setReportFileName(extractFileName(reportFileUrl, reviewTask.getProductName() + "_v1.0.pdf"));
+        aiTask.setReportFileName(StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
+                extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf")));
         aiTask.setAiSummary("");
         aiTask.setReviewOpinion("");
         aiTask.setReviewer("");
-        aiTask.setSubmitTime(reviewTask.getSubmitTime());
+        aiTask.setSubmitTime(reviewVersion.getSubmitTime() == null ? reviewTask.getSubmitTime() : reviewVersion.getSubmitTime());
         aiTask.setCreateBy(StringUtils.defaultString(reviewTask.getCreateBy(), reviewTask.getUpdateBy()));
         aiTask.setRemark("由审核列表任务自动创建");
         auditAiMapper.insertAuditAiTask(aiTask);

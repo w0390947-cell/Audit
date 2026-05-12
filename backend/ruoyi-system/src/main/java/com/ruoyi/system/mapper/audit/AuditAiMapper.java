@@ -16,6 +16,8 @@ public interface AuditAiMapper
     AuditAiTask selectAuditAiTaskByReviewVersion(@Param("reviewTaskId") Long reviewTaskId,
             @Param("reviewVersionId") Long reviewVersionId);
 
+    AuditAiTask selectAuditAiTaskByReviewTaskWithoutVersion(@Param("reviewTaskId") Long reviewTaskId);
+
     List<AuditAiFinding> selectAuditAiFindingListByTaskId(Long aiTaskId);
 
     List<AuditAiFinding> selectAuditAiFindingListByReviewTaskId(Long reviewTaskId);
@@ -30,6 +32,10 @@ public interface AuditAiMapper
 
     int updateAuditAiTaskStatus(@Param("aiTaskId") Long aiTaskId, @Param("taskStatus") String taskStatus,
             @Param("progressText") String progressText, @Param("updateBy") String updateBy);
+
+    int bindAuditAiTaskReviewVersion(@Param("aiTaskId") Long aiTaskId,
+            @Param("reviewVersionId") Long reviewVersionId,
+            @Param("updateBy") String updateBy);
 
     int updateAuditAiTaskQueue(@Param("aiTaskId") Long aiTaskId, @Param("priority") String priority,
             @Param("queuePosition") Integer queuePosition, @Param("taskStatus") String taskStatus,
@@ -56,6 +62,8 @@ public interface AuditAiMapper
      * @return 更新行数
      */
     int updateAuditAiAnalysisResult(AuditAiTask task);
+
+    int updateAuditAiAnalysisResultWithoutCount(AuditAiTask task);
 
     /**
      * 更新 AI 分析失败状态

@@ -101,6 +101,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 1
     </select>
 
+    <select id="selectAuditAiTaskByReviewTaskWithoutVersion" resultMap="AuditAiTaskResult">
+        <include refid="selectAuditAiTaskVo"/>
+        where a.review_task_id = #{reviewTaskId}
+          and a.review_version_id is null
+          and a.del_flag = '0'
+        order by a.ai_task_id desc
+        limit 1
+    </select>
+
     <select id="selectAuditAiFindingListByTaskId" parameterType="Long" resultMap="AuditAiFindingResult">
         select finding_id, ai_task_id, finding_type, finding_title, finding_content, sort_num
         from audit_ai_finding
@@ -164,6 +173,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where ai_task_id = #{aiTaskId}
     </update>
 
+    <update id="bindAuditAiTaskReviewVersion">
+        update audit_ai_task
+        set review_version_id = #{reviewVersionId},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+          and del_flag = '0'
+          and review_version_id is null
+    </update>
+
     <update id="updateAuditAiTaskQueue">
         update audit_ai_task
         set priority = #{priority},
@@ -221,6 +240,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="progressText != null">progress_text = #{progressText},</if>
             <if test="aiSummary != null">ai_summary = #{aiSummary},</if>
             ai_analysis_count = ifnull(ai_analysis_count, 0) + 1,
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where ai_task_id = #{aiTaskId}
+    </update>
+
+    <update id="updateAuditAiAnalysisResultWithoutCount" parameterType="AuditAiTask">
+        update audit_ai_task
+        <set>
+            <if test="taskStatus != null and taskStatus != ''">task_status = #{taskStatus},</if>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="progressPercent != null">progress_percent = #{progressPercent},</if>
+            <if test="progressText != null">progress_text = #{progressText},</if>
+            <if test="aiSummary != null">ai_summary = #{aiSummary},</if>
             update_by = #{updateBy},
             update_time = sysdate()
         </set>

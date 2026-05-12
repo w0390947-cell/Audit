@@ -1,0 +1,46 @@
+-- AI task workflow stage persistence and callback idempotency.
+CREATE TABLE IF NOT EXISTS `audit_ai_flow_stage` (
+  `stage_id` bigint NOT NULL AUTO_INCREMENT COMMENT '阶段主键',
+  `ai_task_id` bigint NOT NULL COMMENT 'AI任务主键',
+  `run_id` varchar(100) NOT NULL COMMENT '本次执行标识，默认使用workflow_task_id',
+  `workflow_task_id` varchar(100) DEFAULT NULL COMMENT '工作流任务ID',
+  `workflow_task_no` varchar(100) DEFAULT NULL COMMENT '工作流任务编号',
+  `stage_code` varchar(64) NOT NULL COMMENT '阶段编码',
+  `stage_instance_id` varchar(100) DEFAULT NULL COMMENT '阶段实例ID，工作流有重复节点时使用',
+  `stage_name` varchar(100) NOT NULL COMMENT '阶段名称',
+  `stage_status` varchar(32) NOT NULL COMMENT '阶段状态',
+  `agent_name` varchar(100) DEFAULT NULL COMMENT '智能体或节点名称',
+  `start_time` datetime DEFAULT NULL COMMENT '开始时间',
+  `end_time` datetime DEFAULT NULL COMMENT '结束时间',
+  `duration_ms` bigint DEFAULT NULL COMMENT '耗时毫秒',
+  `stage_summary` varchar(500) DEFAULT NULL COMMENT '阶段摘要',
+  `stage_detail` text COMMENT '阶段详情',
+  `output_json` longtext COMMENT '阶段输出JSON',
+  `error_message` varchar(1000) DEFAULT NULL COMMENT '错误信息',
+  `sort_num` int DEFAULT 0 COMMENT '排序',
+  `create_by` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_by` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`stage_id`),
+  KEY `idx_ai_task_id` (`ai_task_id`),
+  KEY `idx_ai_task_run_stage` (`ai_task_id`, `run_id`, `stage_code`),
+  KEY `idx_run_id` (`run_id`),
+  KEY `idx_workflow_task_id` (`workflow_task_id`),
+  KEY `idx_stage_code` (`stage_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI任务执行流程阶段表';
+
+CREATE TABLE IF NOT EXISTS `audit_workflow_callback_event` (
+  `event_id` bigint NOT NULL AUTO_INCREMENT COMMENT '事件主键',
+  `callback_event_id` varchar(100) NOT NULL COMMENT '工作流回调事件ID',
+  `ai_task_id` bigint NOT NULL COMMENT 'AI任务主键',
+  `workflow_task_id` varchar(100) DEFAULT NULL COMMENT '工作流任务ID',
+  `event_status` varchar(20) NOT NULL DEFAULT 'processing' COMMENT 'processing/processed/ignored/failed',
+  `raw_payload` longtext COMMENT '回调原文JSON',
+  `error_message` varchar(1000) DEFAULT NULL COMMENT '处理失败原因',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`event_id`),
+  UNIQUE KEY `uk_callback_event_id` (`callback_event_id`),
+  KEY `idx_ai_task_workflow` (`ai_task_id`, `workflow_task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='工作流回调事件幂等表';

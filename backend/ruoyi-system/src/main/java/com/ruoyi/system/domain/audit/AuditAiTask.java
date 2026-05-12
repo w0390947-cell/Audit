@@ -72,6 +72,8 @@ public class AuditAiTask extends BaseEntity
 
     private List<AuditAiFinding> findingList;
 
+    private List<AuditAiFlowStage> flowStageList;
+
     public Long getAiTaskId()
     {
         return aiTaskId;
@@ -330,5 +332,15 @@ public class AuditAiTask extends BaseEntity
     public void setFindingList(List<AuditAiFinding> findingList)
     {
         this.findingList = findingList;
+    }
+
+    public List<AuditAiFlowStage> getFlowStageList()
+    {
+        return flowStageList;
+    }
+
+    public void setFlowStageList(List<AuditAiFlowStage> flowStageList)
+    {
+        this.flowStageList = flowStageList;
     }
 }

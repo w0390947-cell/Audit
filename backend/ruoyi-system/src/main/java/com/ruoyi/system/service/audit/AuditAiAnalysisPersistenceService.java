@@ -20,4 +20,6 @@ public interface AuditAiAnalysisPersistenceService
      * @param operator 操作人
      */
     void saveAuditResult(AuditAiTask task, FastGptAuditResult result, String operator);
+
+    void saveAuditResult(AuditAiTask task, FastGptAuditResult result, String operator, boolean increaseAnalysisCount);
 }

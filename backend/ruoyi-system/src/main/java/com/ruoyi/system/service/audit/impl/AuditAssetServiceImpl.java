@@ -104,7 +104,7 @@ public class AuditAssetServiceImpl implements IAuditAssetService
         stats.setYearReturnedData(Arrays.asList(yearReturnedCount));
         stats.setMonthApprovedData(monthApprovedData);
         stats.setMonthReturnedData(monthReturnedData);
-        stats.setPieLabels(Arrays.asList("审核通过归档", "驳回归档"));
+        stats.setPieLabels(Arrays.asList("审核通过归档", "驳回"));
         stats.setPieData(Arrays.asList((int) approvedCount, (int) returnedCount));
         return stats;
     }

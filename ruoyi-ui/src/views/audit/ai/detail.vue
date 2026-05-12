@@ -56,7 +56,7 @@
         <div class="section-title">流转状态</div>
         <div class="stage-section">
           <div class="stage-line" />
-          <div v-for="(item, index) in aiFlowStageList" :key="item.stageCode || index" class="stage-item">
+          <div v-for="(item, index) in displayAiFlowStageList" :key="item.stageKey || item.stageCode || index" class="stage-item">
             <div :class="['stage-node', 'stage-' + item.status]">{{ index + 1 }}</div>
             <div class="stage-name-row">
               <span class="stage-name">{{ item.stageName }}</span>
@@ -67,7 +67,14 @@
             <div class="stage-card">
               <div class="stage-card-head">
                 <span>{{ item.summary }}</span>
-                <span class="stage-log-empty">暂无日志</span>
+                <el-button
+                  v-if="item.hasLog"
+                  type="text"
+                  size="mini"
+                  class="stage-log-btn"
+                  @click="openStageLog(item)"
+                >处理日志</el-button>
+                <span v-else class="stage-log-empty">暂无日志</span>
               </div>
               <div v-for="(line, lineIndex) in item.lines" :key="'stage_' + index + '_' + lineIndex" class="stage-card-line">
                 {{ line }}
@@ -133,10 +140,29 @@
           <div class="decision-actions">
             <el-button type="primary" size="small" @click="submitDecision('approved')" v-hasPermi="['audit:ai:review']">审核通过</el-button>
             <el-button size="small" @click="submitDecision('pending')" v-hasPermi="['audit:ai:review']">待修改</el-button>
+            <el-button type="danger" size="small" @click="submitDecision('returned')" v-hasPermi="['audit:ai:review']">驳回</el-button>
           </div>
         </div>
       </div>
     </div>
+
+    <el-dialog title="处理日志" :visible.sync="stageLogOpen" width="680px" append-to-body>
+      <div v-if="currentStageLog" class="stage-log-dialog">
+        <div class="stage-log-title">{{ currentStageLog.stageName }}</div>
+        <div v-if="currentStageLog.stageDetail" class="stage-log-block">
+          <div class="stage-log-label">阶段详情</div>
+          <pre>{{ currentStageLog.stageDetail }}</pre>
+        </div>
+        <div v-if="currentStageLog.errorMessage" class="stage-log-block error">
+          <div class="stage-log-label">错误信息</div>
+          <pre>{{ currentStageLog.errorMessage }}</pre>
+        </div>
+        <div v-if="currentStageLog.outputText" class="stage-log-block">
+          <div class="stage-log-label">阶段输出</div>
+          <pre>{{ currentStageLog.outputText }}</pre>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -154,7 +180,8 @@ export default {
       previewInfo: null,
       previewError: '',
       detail: {
-        findingList: []
+        findingList: [],
+        flowStageList: []
       },
       reviewDetail: {
         stageList: [],
@@ -163,7 +190,9 @@ export default {
       },
       reviewForm: {
         reviewOpinion: ''
-      }
+      },
+      stageLogOpen: false,
+      currentStageLog: null
     }
   },
   computed: {
@@ -199,6 +228,13 @@ export default {
         this.buildResultStage(),
         this.buildReviewStage()
       ]
+    },
+    displayAiFlowStageList() {
+      if (Array.isArray(this.detail.flowStageList) && this.detail.flowStageList.length) {
+        const stages = this.detail.flowStageList.map(this.normalizeFlowStage)
+        return this.compactFlowStageList(stages)
+      }
+      return this.aiFlowStageList
     },
     displayIssueList() {
       if (Array.isArray(this.detail.findingList) && this.detail.findingList.length) {
@@ -238,6 +274,316 @@ export default {
         return '中优先级'
       }
       return '低优先级'
+    },
+    normalizeFlowStage(item, index) {
+      const detailLines = this.splitStructuredText(item.stageDetail)
+      const outputText = this.formatJsonText(item.outputJson)
+      const errorMessage = item.errorMessage || ''
+      return {
+        stageKey: item.stageId || item.stageInstanceId || item.stageCode || index,
+        stageCode: item.stageCode,
+        stageName: item.stageName || item.stageCode || '执行阶段',
+        status: this.normalizeBackendStageStatus(item.stageStatus),
+        statusText: this.backendStageStatusLabel(item.stageStatus),
+        startTime: item.startTime,
+        endTime: item.endTime,
+        durationMs: item.durationMs,
+        agentName: item.agentName,
+        timeText: this.stageTimeText(item.startTime, item.endTime, item.durationMs),
+        summary: item.stageSummary || errorMessage || '--',
+        lines: detailLines.length ? detailLines : this.stageFallbackLines(item, outputText, errorMessage),
+        stageDetail: item.stageDetail,
+        outputText,
+        outputData: this.parseJsonValue(item.outputJson),
+        errorMessage,
+        hasLog: !!(item.stageDetail || outputText || errorMessage)
+      }
+    },
+    compactFlowStageList(stages) {
+      const sortedStages = [...stages].sort((left, right) => Number(left.sortNum || 0) - Number(right.sortNum || 0))
+      const groups = [
+        {
+          stageCode: 'task_receive',
+          stageName: '任务接收',
+          codes: ['queued', 'input_validate']
+        },
+        {
+          stageCode: 'content_parse',
+          stageName: '内容解析',
+          codes: ['file_parse', 'target_file_parse', 'basis_file_parse', 'text_split', 'target_text_split']
+        },
+        {
+          stageCode: 'audit_analysis',
+          stageName: '审核分析',
+          codes: ['knowledge_retrieve', 'uploaded_basis_match', 'basis_pack_or_match', 'ai_audit', 'result_validate']
+        },
+        {
+          stageCode: 'result_process',
+          stageName: '结果处理',
+          codes: ['result_save', 'callback']
+        }
+      ]
+      const usedKeys = new Set()
+      const compactList = groups.map(group => {
+        const children = sortedStages.filter(stage => {
+          const matched = group.codes.includes(stage.stageCode)
+          if (matched) {
+            usedKeys.add(stage.stageKey)
+          }
+          return matched
+        })
+        return this.buildCompactFlowStage(group, children)
+      })
+      const extraStages = sortedStages.filter(stage => !usedKeys.has(stage.stageKey))
+      if (extraStages.length) {
+        const auditStage = compactList.find(item => item.stageCode === 'audit_analysis')
+        Object.assign(auditStage, this.buildCompactFlowStage(groups[2], auditStage.children.concat(extraStages)))
+      }
+      return compactList
+    },
+    buildCompactFlowStage(group, children) {
+      const status = group.stageCode === 'result_process'
+        ? this.compactResultStatus(children)
+        : this.aggregateFlowStatus(children)
+      return {
+        stageKey: group.stageCode,
+        stageCode: group.stageCode,
+        stageName: group.stageName,
+        status,
+        statusText: group.stageCode === 'result_process' && status === this.reviewStageStatus(this.detail.reviewStatus)
+          ? this.reviewStatusLabel(this.detail.reviewStatus)
+          : this.flowStatusLabel(status),
+        timeText: this.compactStageTimeText(children, group.stageCode),
+        summary: this.compactStageSummary(group.stageCode, children, status),
+        lines: this.compactStageLines(group.stageCode, children),
+        stageDetail: this.compactStageDetail(children, group.stageCode),
+        outputText: this.compactStageOutput(children),
+        errorMessage: children.map(item => item.errorMessage).filter(Boolean).join('\n'),
+        hasLog: children.length > 0 || group.stageCode === 'result_process',
+        children
+      }
+    },
+    aggregateFlowStatus(children) {
+      if (!children.length) {
+        return 'pending'
+      }
+      const statuses = children.map(item => item.status)
+      if (statuses.includes('failed')) {
+        return 'failed'
+      }
+      if (statuses.includes('running')) {
+        return 'running'
+      }
+      if (statuses.includes('waiting')) {
+        return 'waiting'
+      }
+      if (statuses.includes('paused')) {
+        return 'paused'
+      }
+      return statuses.every(status => status === 'done') ? 'done' : 'pending'
+    },
+    compactResultStatus(children) {
+      const workflowStatus = this.aggregateFlowStatus(children)
+      if (workflowStatus !== 'done') {
+        return workflowStatus
+      }
+      return this.reviewStageStatus(this.detail.reviewStatus)
+    },
+    compactStageTimeText(children, stageCode) {
+      const start = this.boundaryStageTime(children, 'startTime', 'min')
+      const end = this.boundaryStageTime(children, 'endTime', 'max')
+      const duration = children.reduce((total, item) => total + Number(item.durationMs || 0), 0)
+      if (start || end) {
+        return this.stageTimeText(start, end, duration)
+      }
+      if (stageCode === 'result_process') {
+        return this.parseTime(this.detail.updateTime, '{y}-{m}-{d} {h}:{i}:{s}') || '--'
+      }
+      return '--'
+    },
+    boundaryStageTime(children, field, direction) {
+      const times = children
+        .map(item => item[field])
+        .filter(Boolean)
+        .map(value => ({ value, time: new Date(value).getTime() }))
+        .filter(item => Number.isFinite(item.time))
+      if (!times.length) {
+        return ''
+      }
+      times.sort((left, right) => direction === 'min' ? left.time - right.time : right.time - left.time)
+      return times[0].value
+    },
+    compactStageSummary(stageCode, children, status) {
+      if (status === 'failed') {
+        return '处理失败，请查看处理日志'
+      }
+      if (stageCode === 'task_receive') {
+        return status === 'done' ? '任务已接收并完成输入校验' : '等待任务接收'
+      }
+      if (stageCode === 'content_parse') {
+        return status === 'done' ? '报告内容解析完成' : '报告内容解析处理中'
+      }
+      if (stageCode === 'audit_analysis') {
+        const count = this.outputValue(children, ['ai_audit', 'result_validate'], ['finding_count', 'totalIssues', 'total_issues'])
+        return count !== '' ? '审核分析完成，发现' + count + '个问题' : '审核分析完成'
+      }
+      if (stageCode === 'result_process') {
+        return this.reviewStageSummary(this.detail.reviewStatus)
+      }
+      return '--'
+    },
+    compactStageLines(stageCode, children) {
+      if (stageCode === 'task_receive') {
+        return [
+          '任务编号：' + this.displayValue(this.detail.taskNo),
+          '报告文件：' + this.displayValue(this.detail.reportFileName),
+          this.childSummaryLine(children, 'input_validate')
+        ].filter(Boolean)
+      }
+      if (stageCode === 'content_parse') {
+        return [
+          this.outputLine(children, ['file_parse', 'target_file_parse'], '解析文本', ['char_count'], '字'),
+          this.outputLine(children, ['file_parse', 'target_file_parse'], '识别段落', ['block_count'], '块'),
+          this.outputLine(children, ['text_split', 'target_text_split'], '生成分片', ['chunk_count'], '个')
+        ].filter(Boolean)
+      }
+      if (stageCode === 'audit_analysis') {
+        return [
+          this.outputLine(children, ['knowledge_retrieve', 'uploaded_basis_match', 'basis_pack_or_match'], '依据命中', ['reference_count', 'references_used_in_prompt', 'basis_chunks_used_in_prompt'], '条'),
+          this.outputLine(children, ['ai_audit'], '模型调用', ['model_call_count'], '次', ['model_usage_summary']),
+          this.outputLine(children, ['ai_audit', 'result_validate'], '发现问题', ['finding_count', 'totalIssues', 'total_issues'], '个')
+        ].filter(Boolean)
+      }
+      return [
+        this.outputLine(children, ['result_save'], '保存问题', ['issue_count'], '条'),
+        this.childSummaryLine(children, 'callback'),
+        '人工复核：' + this.reviewStatusLabel(this.detail.reviewStatus)
+      ].filter(Boolean)
+    },
+    childSummaryLine(children, stageCode) {
+      const child = children.find(item => item.stageCode === stageCode)
+      return child ? child.summary : ''
+    },
+    outputLine(children, stageCodes, label, keys, unit, nestedPath) {
+      const value = this.outputValue(children, stageCodes, keys, nestedPath)
+      return value === '' ? '' : label + '：' + value + (unit || '')
+    },
+    outputValue(children, stageCodes, keys, nestedPath) {
+      for (const child of children.filter(item => stageCodes.includes(item.stageCode))) {
+        let output = child.outputData || {}
+        for (const path of nestedPath || []) {
+          output = output && output[path] ? output[path] : {}
+        }
+        for (const key of keys) {
+          if (output[key] !== undefined && output[key] !== null && output[key] !== '') {
+            return output[key]
+          }
+        }
+      }
+      return ''
+    },
+    compactStageDetail(children, stageCode) {
+      const logs = children.map(item => {
+        const lines = [
+          item.stageName + '｜' + item.statusText + '｜' + item.timeText,
+          item.summary,
+          ...(item.lines || [])
+        ].filter(Boolean)
+        return lines.join('\n')
+      })
+      if (stageCode === 'result_process') {
+        logs.push('人工复核｜' + this.reviewStatusLabel(this.detail.reviewStatus) + '｜' + (this.parseTime(this.detail.updateTime, '{y}-{m}-{d} {h}:{i}:{s}') || '--'))
+        logs.push(this.reviewStageSummary(this.detail.reviewStatus))
+      }
+      return logs.join('\n\n')
+    },
+    compactStageOutput(children) {
+      return children
+        .filter(item => item.outputText)
+        .map(item => '【' + item.stageName + '】\n' + item.outputText)
+        .join('\n\n')
+    },
+    normalizeBackendStageStatus(stageStatus) {
+      const map = {
+        pending: 'pending',
+        waiting: 'waiting',
+        running: 'running',
+        completed: 'done',
+        success: 'done',
+        failed: 'failed',
+        skipped: 'paused',
+        cancelled: 'paused',
+        canceled: 'paused'
+      }
+      return map[String(stageStatus || '').toLowerCase()] || 'pending'
+    },
+    backendStageStatusLabel(stageStatus) {
+      return this.flowStatusLabel(this.normalizeBackendStageStatus(stageStatus))
+    },
+    stageTimeText(startTime, endTime, durationMs) {
+      const start = this.parseTime(startTime, '{y}-{m}-{d} {h}:{i}:{s}')
+      const end = this.parseTime(endTime, '{y}-{m}-{d} {h}:{i}:{s}')
+      const duration = this.durationText(durationMs)
+      if (start && end) {
+        return start + ' 至 ' + end + (duration ? '，耗时' + duration : '')
+      }
+      if (start) {
+        return start + (duration ? '，耗时' + duration : '')
+      }
+      if (end) {
+        return end + (duration ? '，耗时' + duration : '')
+      }
+      return duration || '--'
+    },
+    durationText(durationMs) {
+      const value = Number(durationMs)
+      if (!Number.isFinite(value) || value <= 0) {
+        return ''
+      }
+      if (value < 1000) {
+        return value + '毫秒'
+      }
+      if (value < 60000) {
+        return Math.round(value / 1000) + '秒'
+      }
+      return Math.round(value / 60000) + '分钟'
+    },
+    stageFallbackLines(item, outputText, errorMessage) {
+      const lines = []
+      if (item.agentName) {
+        lines.push('处理节点：' + item.agentName)
+      }
+      if (errorMessage) {
+        lines.push('错误信息：' + errorMessage)
+      }
+      if (outputText) {
+        lines.push('阶段输出：' + outputText)
+      }
+      return lines.length ? lines : ['暂无阶段详情']
+    },
+    formatJsonText(value) {
+      if (!value) {
+        return ''
+      }
+      try {
+        const parsed = this.parseJsonValue(value)
+        return JSON.stringify(parsed, null, 2)
+      } catch (e) {
+        return String(value)
+      }
+    },
+    parseJsonValue(value) {
+      if (!value) {
+        return {}
+      }
+      if (typeof value === 'object') {
+        return value
+      }
+      return JSON.parse(value)
+    },
+    openStageLog(item) {
+      this.currentStageLog = item
+      this.stageLogOpen = true
     },
     buildQueueStage() {
       const done = !!(this.detail.aiTaskId || this.detail.taskNo)
@@ -341,6 +687,9 @@ export default {
       if (reviewStatus === 'approved') {
         return 'done'
       }
+      if (reviewStatus === 'returned') {
+        return 'failed'
+      }
       if (reviewStatus === 'pending') {
         return 'paused'
       }
@@ -411,6 +760,9 @@ export default {
       if (reviewStatus === 'approved') {
         return '已通过'
       }
+      if (reviewStatus === 'returned') {
+        return '已驳回'
+      }
       if (reviewStatus === 'pending') {
         return '待修改'
       }
@@ -419,6 +771,9 @@ export default {
     reviewStageSummary(reviewStatus) {
       if (reviewStatus === 'approved') {
         return '人工复核已通过'
+      }
+      if (reviewStatus === 'returned') {
+        return '人工复核已驳回'
       }
       if (reviewStatus === 'pending') {
         return '人工复核要求修改'
@@ -535,7 +890,23 @@ export default {
         this.$message.warning('AI任务参数缺失，无法提交审核')
         return
       }
-      const actionText = reviewStatus === 'approved' ? '审核通过' : '设为待修改'
+      const actionTextMap = {
+        approved: '审核通过',
+        pending: '设为待修改',
+        returned: '驳回'
+      }
+      const actionText = actionTextMap[reviewStatus] || '提交审核'
+      if (reviewStatus === 'returned') {
+        reviewAiTask({
+          aiTaskId,
+          reviewStatus,
+          reviewOpinion: this.reviewForm.reviewOpinion
+        }).then(() => {
+          this.$modal.msgSuccess(actionText + '成功')
+          this.getDetail()
+        }).catch(() => {})
+        return
+      }
       this.$modal.confirm('是否确认' + actionText + '当前任务？').then(() => {
         return reviewAiTask({
           aiTaskId,
@@ -808,7 +1179,8 @@ export default {
 
 .stage-status-icon,
 .stage-status-text,
-.stage-log-empty {
+.stage-log-empty,
+.stage-log-btn {
   font-size: 13px;
 }
 
@@ -866,6 +1238,44 @@ export default {
   color: #606266;
   font-size: 12px;
   line-height: 1.9;
+}
+
+.stage-log-dialog {
+  .stage-log-title {
+    color: #303133;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .stage-log-block {
+    border: 1px solid #ebeef5;
+    background: #f7f9fb;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .stage-log-block.error {
+    border-color: #fde2e2;
+    background: #fff6f6;
+  }
+
+  .stage-log-label {
+    color: #606266;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #303133;
+    font-size: 12px;
+    line-height: 1.7;
+    font-family: Consolas, Monaco, monospace;
+  }
 }
 
 .issue-card {

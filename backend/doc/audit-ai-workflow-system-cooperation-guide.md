@@ -77,6 +77,16 @@ audit_ai_flow_stage
 }
 ```
 
+现有业务系统接入基线如下，工作流系统侧实现时需要优先兼容：
+
+- 业务系统传入的 `biz_id` 当前格式为 `AI-TASK-{aiTaskId}`，例如 `AI-TASK-1001`。
+- 回调地址当前为 `POST /audit/ai/workflow/callback`。
+- 现有回调字段为 `task_id`、`task_no`、`workflow_code`、`biz_id`、`task_status`、`result_url`、`finished_at`、`error`。
+- 现有成功状态为 `SUCCESS`，失败状态为 `FAILED` 或 `CANCELED`。
+- 业务系统 AI 任务状态当前没有 `failed` 字典值，工作流失败第一版映射为 `audit_ai_task.task_status = paused`，失败节点仍使用 `stage_status = failed`。
+
+第二阶段可在现有字段基础上增加 `workflow_task_id`、`workflow_task_no`、`status`、`stages`、`result`、`callback_event_id` 等字段。为降低联调风险，建议工作流系统在过渡期同时返回新旧字段。
+
 ## 4. 调用链路
 
 ### 4.1 创建工作流任务
@@ -87,8 +97,8 @@ audit_ai_flow_stage
 
 ```json
 {
-  "biz_id": "audit-ai-1001",
-  "callback_url": "https://业务系统域名/audit/workflow/callback",
+  "biz_id": "AI-TASK-1001",
+  "callback_url": "https://业务系统域名/audit/ai/workflow/callback",
   "input": {
     "ai_task_id": 1001,
     "review_task_id": 2001,
@@ -108,6 +118,8 @@ audit_ai_flow_stage
 
 ```json
 {
+  "taskId": 10001,
+  "taskNo": "WF-202605110001",
   "workflow_task_id": "wf-task-202605110001",
   "workflow_task_no": "WF-202605110001",
   "status": "accepted",
@@ -148,7 +160,10 @@ POST {callback_url}
 
 ```json
 {
-  "biz_id": "audit-ai-1001",
+  "biz_id": "AI-TASK-1001",
+  "task_id": 10001,
+  "task_no": "WF-202605110001",
+  "task_status": "SUCCESS",
   "workflow_task_id": "wf-task-202605110001",
   "workflow_task_no": "WF-202605110001",
   "workflow_code": "audit_report_review",
@@ -171,8 +186,11 @@ POST {callback_url}
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `biz_id` | 是 | 业务系统传入的业务ID，必须原样返回，例如 `audit-ai-1001` |
-| `workflow_task_id` | 是 | 工作流系统任务唯一ID |
+| `biz_id` | 是 | 业务系统传入的业务ID，必须原样返回，例如 `AI-TASK-1001` |
+| `task_id` | 过渡期必填 | 现有业务系统识别的工作流任务ID，数字类型 |
+| `task_no` | 过渡期必填 | 现有业务系统识别的工作流任务编号 |
+| `task_status` | 过渡期必填 | 现有业务系统识别的状态，成功用 `SUCCESS`，失败用 `FAILED` 或 `CANCELED` |
+| `workflow_task_id` | 是 | 工作流系统任务唯一ID。过渡期可与 `task_id` 表达同一任务 |
 | `workflow_task_no` | 否 | 工作流任务编号，用于展示或排查 |
 | `workflow_code` | 否 | 工作流编码 |
 | `workflow_name` | 否 | 工作流名称 |
@@ -187,6 +205,12 @@ POST {callback_url}
 | `error` | 失败时必填 | 整体失败信息 |
 | `callback_event_id` | 是 | 回调事件唯一ID，用于幂等 |
 | `callback_time` | 是 | 回调时间 |
+
+过渡期兼容规则：
+
+- 如果同时返回 `task_id` 和 `workflow_task_id`，业务系统优先使用 `workflow_task_id` 作为 `run_id`，但仍保留 `task_id` 兼容现有结果查询。
+- 如果同时返回 `task_status` 和 `status`，业务系统会将 `SUCCESS` 等价为 `completed`，将 `FAILED/CANCELED` 等价为 `failed/cancelled`。
+- 终态成功回调中应优先直接携带 `result`；如果短期只能提供 `result_url`，业务系统会继续主动查询结果，但仍需要 `stages` 用于页面展示。
 
 ## 7. 状态枚举
 
@@ -209,8 +233,10 @@ POST {callback_url}
 | `waiting` | `waiting` |
 | `running` | `executing` |
 | `completed` | `completed` |
-| `failed` | `failed` |
-| `cancelled` | `paused` 或 `failed`，需双方确认 |
+| `failed` | `paused` |
+| `cancelled` | `paused` |
+
+说明：当前业务系统 `audit_ai_task_status` 字典没有 `failed`。如后续产品明确要求区分“暂停”和“失败”，需业务系统先新增 `failed` 字典、列表筛选和统计逻辑，再调整此映射。
 
 ### 7.2 节点状态
 
@@ -232,6 +258,7 @@ POST {callback_url}
 ```json
 {
   "stage_code": "preprocess",
+  "stage_instance_id": "node-preprocess-1",
   "stage_name": "报告预处理",
   "stage_status": "completed",
   "agent_name": "预处理智能体",
@@ -254,6 +281,7 @@ POST {callback_url}
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `stage_code` | 是 | 稳定节点编码 |
+| `stage_instance_id` | 否 | 节点实例ID。工作流存在多个同类节点时建议提供 |
 | `stage_name` | 是 | 节点展示名称 |
 | `stage_status` | 是 | 节点状态 |
 | `agent_name` | 否 | 智能体、工具或节点名称 |
@@ -300,6 +328,9 @@ POST {callback_url}
   "review_opinion": "建议退回修改后重新提交。",
   "findings": [
     {
+      "type": "数据错误",
+      "title": "报告编号与任务单不一致",
+      "content": "报告编号为 A001，任务单编号为 B001，两者不一致。建议核对后修改。",
       "finding_type": "数据错误",
       "finding_title": "报告编号与任务单不一致",
       "finding_content": "报告编号为 A001，任务单编号为 B001，两者不一致。建议核对后修改。",
@@ -336,19 +367,21 @@ POST {callback_url}
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `finding_type` | 是 | 问题类型 |
-| `finding_title` | 是 | 问题标题 |
-| `finding_content` | 是 | 问题内容 |
+| `type` / `finding_type` | 是 | 问题类型。过渡期建议两个字段都返回 |
+| `title` / `finding_title` | 是 | 问题标题。过渡期建议两个字段都返回 |
+| `content` / `finding_content` | 是 | 问题内容。过渡期建议两个字段都返回 |
 | `severity` | 否 | 严重程度 |
 | `sort_num` | 是 | 排序 |
 | `evidence` | 否 | 证据列表 |
 
 业务系统当前可直接落库的字段包括：
 
-- `finding_type`
-- `finding_title`
-- `finding_content`
+- `type` 或 `finding_type`
+- `title` 或 `finding_title`
+- `content` 或 `finding_content`
 - `sort_num`
+
+现有业务系统解析器已支持 `type/finding_type`、`title`、`content/problem`。第二阶段业务系统应补充支持 `finding_title/finding_content`。为降低联调风险，工作流系统过渡期建议同时返回 `type/title/content` 和 `finding_type/finding_title/finding_content`。
 
 `severity` 和 `evidence` 可先放入扩展 JSON 或后续扩表。
 
@@ -389,7 +422,7 @@ POST {callback_url}
 
 业务系统会据此：
 
-- 将 `audit_ai_task.task_status` 更新为 `failed`。
+- 将 `audit_ai_task.task_status` 更新为 `paused`。
 - 将 `progress_text` 更新为错误摘要。
 - 将失败节点保存到 `audit_ai_flow_stage`。
 - 在 `AI任务详情` 页面展示红色失败节点和错误信息。
@@ -407,6 +440,8 @@ POST {callback_url}
 - 同一个 `callback_event_id` 重复发送时，业务系统应只处理一次。
 - 同一个 `workflow_task_id` 的终态回调重复发送时，业务系统应覆盖更新为同一结果，不重复插入 findings。
 - 如果业务系统触发重新分析，应创建新的 `workflow_task_id`，避免新旧结果混淆。
+- 如果旧 `workflow_task_id` 的回调晚于新 `workflow_task_id` 到达，业务系统会记录或忽略该旧事件，但不覆盖最新执行流程。
+- `callback_event_id` 必须在全局范围内唯一，不能只在单个任务内唯一。
 
 ## 13. 时间格式要求
 
@@ -449,7 +484,7 @@ yyyy-MM-dd HH:mm:ss
 
 工作流系统回调业务系统时建议支持以下安全机制之一：
 
-- 请求头携带固定密钥，例如 `X-Workflow-Token`。
+- 请求头携带固定密钥。当前业务系统已支持 `Authorization: Bearer {callbackToken}`。
 - 请求头携带 HMAC 签名，例如 `X-Workflow-Signature`。
 - 使用内网地址和网关鉴权。
 
@@ -465,7 +500,10 @@ yyyy-MM-dd HH:mm:ss
 
 ```json
 {
-  "biz_id": "audit-ai-1001",
+  "biz_id": "AI-TASK-1001",
+  "task_id": 10001,
+  "task_no": "WF-202605110001",
+  "task_status": "SUCCESS",
   "workflow_task_id": "wf-task-202605110001",
   "workflow_task_no": "WF-202605110001",
   "workflow_code": "audit_report_review",
@@ -563,6 +601,9 @@ yyyy-MM-dd HH:mm:ss
     "review_opinion": "建议退回修改后重新提交。",
     "findings": [
       {
+        "type": "数据错误",
+        "title": "报告编号与任务单不一致",
+        "content": "报告编号为 A001，任务单编号为 B001，两者不一致。建议核对后修改。",
         "finding_type": "数据错误",
         "finding_title": "报告编号与任务单不一致",
         "finding_content": "报告编号为 A001，任务单编号为 B001，两者不一致。建议核对后修改。",
@@ -589,7 +630,10 @@ yyyy-MM-dd HH:mm:ss
 
 ```json
 {
-  "biz_id": "audit-ai-1001",
+  "biz_id": "AI-TASK-1001",
+  "task_id": 10001,
+  "task_no": "WF-202605110001",
+  "task_status": "FAILED",
   "workflow_task_id": "wf-task-202605110001",
   "workflow_task_no": "WF-202605110001",
   "workflow_code": "audit_report_review",
@@ -691,13 +735,13 @@ yyyy-MM-dd HH:mm:ss
 
 实施前建议双方确认：
 
-1. `biz_id` 格式是否统一使用 `audit-ai-{aiTaskId}`。
+1. `biz_id` 格式统一使用现有 `AI-TASK-{aiTaskId}`，除非双方同步改代码。
 2. 工作流系统能否在终态回调中返回完整 `stages`。
 3. 工作流系统是否支持过程回调。
 4. 回调鉴权方式使用固定 token、签名还是网关鉴权。
 5. 文件 URL 是否需要临时签名。
-6. 失败状态是否统一使用 `failed`。
-7. 取消状态 `cancelled` 在业务系统中映射为 `paused` 还是 `failed`。
+6. 工作流失败节点使用 `stage_status=failed`，业务任务第一版仍映射为 `paused`。
+7. 取消状态 `cancelled` 在业务系统中第一版映射为 `paused`。
 8. 是否需要保留多次分析历史。如果需要，应增加 `run_id` 或 `analysis_no`。
 9. `evidence`、`severity` 等扩展字段是否首期落库。
 10. 回调时间统一使用北京时间还是 ISO 8601 带时区。
@@ -707,6 +751,9 @@ yyyy-MM-dd HH:mm:ss
 如果工作流系统侧希望先做最小改造，至少需要提供：
 
 - `biz_id`
+- `task_id`
+- `task_no`
+- `task_status`
 - `workflow_task_id`
 - `status`
 - `progress_percent`

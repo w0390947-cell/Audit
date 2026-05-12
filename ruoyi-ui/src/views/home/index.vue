@@ -24,7 +24,7 @@
             <strong>{{ approvedCount }}</strong>
           </div>
           <div class="asset-status-item returned">
-            <span>驳回归档</span>
+            <span>驳回</span>
             <strong>{{ returnedCount }}</strong>
           </div>
         </div>
@@ -149,7 +149,8 @@ export default {
       return index >= 0 ? (this.assetStats.pieData || [])[index] || 0 : 0
     },
     returnedCount() {
-      const index = (this.assetStats.pieLabels || []).indexOf('驳回归档')
+      const labels = this.assetStats.pieLabels || []
+      const index = labels.indexOf('驳回') >= 0 ? labels.indexOf('驳回') : labels.indexOf('驳回归档')
       return index >= 0 ? (this.assetStats.pieData || [])[index] || 0 : 0
     }
   },
@@ -238,7 +239,7 @@ export default {
         },
         series: [
           { name: '审核通过', type: 'bar', barWidth: 10, data: this.assetStats.monthApprovedData || [] },
-          { name: '驳回归档', type: 'bar', barWidth: 10, data: this.assetStats.monthReturnedData || [] }
+          { name: '驳回', type: 'bar', barWidth: 10, data: this.assetStats.monthReturnedData || [] }
         ]
       })
       this.saveChart(chart)

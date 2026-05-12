@@ -5,20 +5,33 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.config.AuditWorkflowProperties;
+import com.ruoyi.system.domain.audit.AuditAiFlowStage;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.domain.audit.FastGptAuditFinding;
 import com.ruoyi.system.domain.audit.FastGptAuditResult;
 import com.ruoyi.system.domain.audit.workflow.AuditWorkflowCallback;
+import com.ruoyi.system.domain.audit.workflow.AuditWorkflowCallbackEvent;
+import com.ruoyi.system.domain.audit.workflow.AuditWorkflowStage;
 import com.ruoyi.system.exception.AuditWorkflowException;
+import com.ruoyi.system.mapper.audit.AuditAiFlowStageMapper;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
+import com.ruoyi.system.mapper.audit.AuditWorkflowCallbackEventMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisPersistenceService;
 import com.ruoyi.system.service.audit.IAuditWorkflowAuditService;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +39,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -36,11 +50,18 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private static final String BIZ_ID_PREFIX = "AI-TASK-";
 
+    private static final DateTimeFormatter NORMAL_DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private final AuditWorkflowProperties properties;
 
     private final RestTemplate auditWorkflowRestTemplate;
 
     private final AuditAiMapper auditAiMapper;
+
+    private final AuditAiFlowStageMapper auditAiFlowStageMapper;
+
+    private final AuditWorkflowCallbackEventMapper callbackEventMapper;
 
     private final AuditAiAnalysisPersistenceService persistenceService;
 
@@ -50,12 +71,16 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     public AuditWorkflowAuditServiceImpl(AuditWorkflowProperties properties,
             @Qualifier("auditWorkflowRestTemplate") RestTemplate auditWorkflowRestTemplate,
-            AuditAiMapper auditAiMapper, AuditAiAnalysisPersistenceService persistenceService,
+            AuditAiMapper auditAiMapper, AuditAiFlowStageMapper auditAiFlowStageMapper,
+            AuditWorkflowCallbackEventMapper callbackEventMapper,
+            AuditAiAnalysisPersistenceService persistenceService,
             AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.properties = properties;
         this.auditWorkflowRestTemplate = auditWorkflowRestTemplate;
         this.auditAiMapper = auditAiMapper;
+        this.auditAiFlowStageMapper = auditAiFlowStageMapper;
+        this.callbackEventMapper = callbackEventMapper;
         this.persistenceService = persistenceService;
         this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
@@ -101,6 +126,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void handleCallback(AuditWorkflowCallback callback, String authorization)
     {
         validateCallbackToken(authorization);
@@ -114,25 +140,157 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         {
             throw new AuditWorkflowException("回调对应的AI任务不存在：" + callback.getBizId());
         }
-        if ("SUCCESS".equalsIgnoreCase(callback.getTaskStatus()))
+        String workflowTaskId = resolveWorkflowTaskId(callback);
+        String runId = StringUtils.defaultIfBlank(workflowTaskId, fallbackRunId(callback, aiTaskId));
+        String callbackEventId = resolveCallbackEventId(callback, runId);
+        if (!tryMarkCallbackProcessing(callbackEventId, aiTaskId, workflowTaskId, toJson(callback)))
         {
-            Long workflowTaskId = callback.getTaskId();
-            if (workflowTaskId == null && StringUtils.isNotBlank(callback.getResultUrl()))
-            {
-                workflowTaskId = parseTaskIdFromResultUrl(callback.getResultUrl());
-            }
-            if (workflowTaskId == null)
-            {
-                throw new AuditWorkflowException("工作流成功回调缺少 task_id");
-            }
-            FastGptAuditResult result = fetchAndMapResult(workflowTaskId);
-            result.setChatId(StringUtils.defaultIfBlank(callback.getTaskNo(), String.valueOf(workflowTaskId)));
-            persistenceService.saveAuditResult(task, result, "workflow-callback");
+            log.info("Duplicate audit workflow callback ignored, callbackEventId={}, aiTaskId={}",
+                    callbackEventId, aiTaskId);
             return;
         }
-        String errorMsg = callback.getError() == null ? "工作流任务失败" : callback.getError().toString();
-        auditAiMapper.updateAuditAiAnalysisFailure(aiTaskId, "AI审核工作流失败：" + errorMsg, "workflow-callback");
-        auditAiQueuePositionService.resortQueuePositions("workflow-callback");
+
+        try
+        {
+            if (isCallbackSuccess(callback))
+            {
+                FastGptAuditResult result = resolveCallbackResult(callback);
+                result.setChatId(StringUtils.defaultIfBlank(resolveWorkflowTaskNo(callback), runId));
+                boolean increaseAnalysisCount = !"completed".equals(task.getTaskStatus());
+                saveFlowStages(aiTaskId, runId, workflowTaskId, resolveWorkflowTaskNo(callback), callback,
+                        "workflow-callback");
+                persistenceService.saveAuditResult(task, result, "workflow-callback", increaseAnalysisCount);
+                callbackEventMapper.updateAuditWorkflowCallbackEventStatus(callbackEventId, "processed", null);
+                return;
+            }
+
+            saveFlowStages(aiTaskId, runId, workflowTaskId, resolveWorkflowTaskNo(callback), callback,
+                    "workflow-callback");
+            String errorMsg = buildCallbackErrorMessage(callback);
+            auditAiMapper.updateAuditAiAnalysisFailure(aiTaskId, "AI审核工作流失败：" + errorMsg, "workflow-callback");
+            auditAiQueuePositionService.resortQueuePositions("workflow-callback");
+            callbackEventMapper.updateAuditWorkflowCallbackEventStatus(callbackEventId, "processed", null);
+        }
+        catch (RuntimeException e)
+        {
+            callbackEventMapper.updateAuditWorkflowCallbackEventStatus(callbackEventId, "failed",
+                    truncate(e.getMessage(), 1000));
+            throw e;
+        }
+    }
+
+    private boolean tryMarkCallbackProcessing(String callbackEventId, Long aiTaskId, String workflowTaskId,
+            String rawPayload)
+    {
+        AuditWorkflowCallbackEvent event = new AuditWorkflowCallbackEvent();
+        event.setCallbackEventId(callbackEventId);
+        event.setAiTaskId(aiTaskId);
+        event.setWorkflowTaskId(workflowTaskId);
+        event.setEventStatus("processing");
+        event.setRawPayload(rawPayload);
+        try
+        {
+            callbackEventMapper.insertAuditWorkflowCallbackEvent(event);
+            return true;
+        }
+        catch (DuplicateKeyException e)
+        {
+            return false;
+        }
+    }
+
+    private FastGptAuditResult resolveCallbackResult(AuditWorkflowCallback callback)
+    {
+        if (callback.getResult() != null && !callback.getResult().isEmpty())
+        {
+            return mapResultData(objectMapper.valueToTree(callback.getResult()));
+        }
+        Long workflowTaskId = callback.getTaskId();
+        if (workflowTaskId == null && StringUtils.isNotBlank(callback.getResultUrl()))
+        {
+            workflowTaskId = parseTaskIdFromResultUrl(callback.getResultUrl());
+        }
+        if (workflowTaskId == null)
+        {
+            throw new AuditWorkflowException("工作流成功回调缺少 result 或 task_id");
+        }
+        return fetchAndMapResult(workflowTaskId);
+    }
+
+    private void saveFlowStages(Long aiTaskId, String runId, String workflowTaskId, String workflowTaskNo,
+            AuditWorkflowCallback callback, String operator)
+    {
+        List<AuditAiFlowStage> stages = mapFlowStages(aiTaskId, runId, workflowTaskId, workflowTaskNo,
+                callback, operator);
+        if (stages.isEmpty())
+        {
+            return;
+        }
+        auditAiFlowStageMapper.deleteAuditAiFlowStageByTaskIdAndRunId(aiTaskId, runId);
+        auditAiFlowStageMapper.insertAuditAiFlowStageBatch(stages);
+    }
+
+    private List<AuditAiFlowStage> mapFlowStages(Long aiTaskId, String runId, String workflowTaskId,
+            String workflowTaskNo, AuditWorkflowCallback callback, String operator)
+    {
+        List<AuditWorkflowStage> source = callback.getStages();
+        if ((source == null || source.isEmpty()) && !isCallbackSuccess(callback))
+        {
+            source = Collections.singletonList(buildFallbackFailedStage(callback));
+        }
+        if (source == null || source.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        List<AuditAiFlowStage> stages = new ArrayList<>();
+        int index = 1;
+        for (AuditWorkflowStage item : source)
+        {
+            if (item == null)
+            {
+                continue;
+            }
+            AuditAiFlowStage stage = new AuditAiFlowStage();
+            stage.setAiTaskId(aiTaskId);
+            stage.setRunId(runId);
+            stage.setWorkflowTaskId(workflowTaskId);
+            stage.setWorkflowTaskNo(workflowTaskNo);
+            stage.setStageCode(StringUtils.defaultIfBlank(item.getStageCode(), "stage_" + index));
+            stage.setStageInstanceId(item.getStageInstanceId());
+            stage.setStageName(StringUtils.defaultIfBlank(item.getStageName(), stage.getStageCode()));
+            stage.setStageStatus(normalizeStageStatus(item.getStageStatus()));
+            stage.setAgentName(item.getAgentName());
+            stage.setStartTime(parseWorkflowTime(item.getStartedAt()));
+            stage.setEndTime(parseWorkflowTime(item.getFinishedAt()));
+            stage.setDurationMs(item.getDurationMs());
+            stage.setStageSummary(truncate(item.getSummary(), 500));
+            stage.setStageDetail(item.getDetail());
+            stage.setOutputJson(toJson(item.getOutput()));
+            stage.setErrorMessage(truncate(toTextOrJson(objectMapper.valueToTree(item.getError())), 1000));
+            stage.setSortNum(item.getSortNum() == null ? index * 10 : item.getSortNum());
+            stage.setCreateBy(operator);
+            stage.setUpdateBy(operator);
+            stages.add(stage);
+            index++;
+        }
+        return stages;
+    }
+
+    private AuditWorkflowStage buildFallbackFailedStage(AuditWorkflowCallback callback)
+    {
+        AuditWorkflowStage stage = new AuditWorkflowStage();
+        JsonNode error = objectMapper.valueToTree(callback.getError());
+        stage.setStageCode(StringUtils.defaultIfBlank(error.path("stage_code").asText(""), "workflow_failed"));
+        stage.setStageName("工作流执行失败");
+        stage.setStageStatus("failed");
+        stage.setStartedAt(callback.getStartedAt());
+        stage.setFinishedAt(callback.getFinishedAt());
+        stage.setDurationMs(callback.getDurationMs());
+        stage.setSummary(buildCallbackErrorMessage(callback));
+        stage.setDetail(toTextOrJson(error.path("detail")));
+        stage.setError(callback.getError());
+        stage.setSortNum(90);
+        return stage;
     }
 
     private JsonNode createTask(AuditAiTask task, String operator)
@@ -283,7 +441,11 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         JsonNode response = exchangeJson(properties.getBaseUrl() + "/api/audit/tasks/" + workflowTaskId + "/result",
                 HttpMethod.GET, null);
         assertSuccess(response, "查询工作流审核结果失败");
-        JsonNode data = response.path("data");
+        return mapResultData(response.path("data"));
+    }
+
+    private FastGptAuditResult mapResultData(JsonNode data)
+    {
         FastGptAuditResult result = new FastGptAuditResult();
         result.setSuccess(true);
         result.setSummary(toTextOrJson(data.path("summary")));
@@ -317,15 +479,128 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
                     issue.path("risk_level").asText(""));
             finding.setType(StringUtils.defaultIfBlank(issue.path("type").asText(""),
                     StringUtils.defaultIfBlank(issue.path("finding_type").asText(""), "AI审核问题")));
-            finding.setTitle(StringUtils.defaultIfBlank(issue.path("title").asText(""), "AI发现问题"));
+            finding.setTitle(StringUtils.defaultIfBlank(issue.path("title").asText(""),
+                    StringUtils.defaultIfBlank(issue.path("finding_title").asText(""), "AI发现问题")));
             finding.setContent(StringUtils.defaultIfBlank(issue.path("content").asText(""),
-                    StringUtils.defaultIfBlank(issue.path("problem").asText(""), issue.path("title").asText(""))));
+                    StringUtils.defaultIfBlank(issue.path("finding_content").asText(""),
+                            StringUtils.defaultIfBlank(issue.path("problem").asText(""),
+                                    issue.path("title").asText("")))));
             finding.setSeverity(severity);
             finding.setLocation(toTextOrJson(issue.path("location")));
             finding.setSuggestion(issue.path("suggestion").asText(""));
             findings.add(finding);
         }
         return findings;
+    }
+
+    private boolean isCallbackSuccess(AuditWorkflowCallback callback)
+    {
+        return "SUCCESS".equalsIgnoreCase(callback.getTaskStatus())
+                || "completed".equalsIgnoreCase(callback.getStatus());
+    }
+
+    private String resolveWorkflowTaskId(AuditWorkflowCallback callback)
+    {
+        if (StringUtils.isNotBlank(callback.getWorkflowTaskId()))
+        {
+            return callback.getWorkflowTaskId();
+        }
+        if (callback.getTaskId() != null)
+        {
+            return String.valueOf(callback.getTaskId());
+        }
+        if (StringUtils.isNotBlank(callback.getResultUrl()))
+        {
+            Long taskId = parseTaskIdFromResultUrl(callback.getResultUrl());
+            return taskId == null ? "" : String.valueOf(taskId);
+        }
+        return "";
+    }
+
+    private String resolveWorkflowTaskNo(AuditWorkflowCallback callback)
+    {
+        return StringUtils.defaultIfBlank(callback.getWorkflowTaskNo(), callback.getTaskNo());
+    }
+
+    private String fallbackRunId(AuditWorkflowCallback callback, Long aiTaskId)
+    {
+        String time = StringUtils.defaultIfBlank(callback.getFinishedAt(),
+                StringUtils.defaultIfBlank(callback.getCallbackTime(), String.valueOf(System.currentTimeMillis())));
+        return BIZ_ID_PREFIX + aiTaskId + "-" + time.replaceAll("[^0-9]", "");
+    }
+
+    private String resolveCallbackEventId(AuditWorkflowCallback callback, String runId)
+    {
+        if (StringUtils.isNotBlank(callback.getCallbackEventId()))
+        {
+            return callback.getCallbackEventId();
+        }
+        String status = StringUtils.defaultIfBlank(callback.getStatus(), callback.getTaskStatus());
+        String time = StringUtils.defaultIfBlank(callback.getFinishedAt(),
+                StringUtils.defaultIfBlank(callback.getCallbackTime(), ""));
+        return runId + ":" + status + ":" + time;
+    }
+
+    private String buildCallbackErrorMessage(AuditWorkflowCallback callback)
+    {
+        JsonNode error = objectMapper.valueToTree(callback.getError());
+        String message = StringUtils.defaultIfBlank(error.path("message").asText(""), callback.getProgressText());
+        if (StringUtils.isBlank(message))
+        {
+            message = toTextOrJson(error);
+        }
+        return StringUtils.defaultIfBlank(truncate(message, 200), "工作流任务失败");
+    }
+
+    private String normalizeStageStatus(String status)
+    {
+        if (StringUtils.isBlank(status))
+        {
+            return "pending";
+        }
+        if ("SUCCESS".equalsIgnoreCase(status))
+        {
+            return "completed";
+        }
+        if ("FAILED".equalsIgnoreCase(status) || "ERROR".equalsIgnoreCase(status))
+        {
+            return "failed";
+        }
+        if ("RUNNING".equalsIgnoreCase(status))
+        {
+            return "running";
+        }
+        if ("CANCELED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status))
+        {
+            return "skipped";
+        }
+        return status.toLowerCase();
+    }
+
+    private Date parseWorkflowTime(String value)
+    {
+        if (StringUtils.isBlank(value))
+        {
+            return null;
+        }
+        try
+        {
+            LocalDateTime localDateTime = LocalDateTime.parse(value.trim(), NORMAL_DATE_TIME_FORMATTER);
+            return Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
+        }
+        catch (DateTimeParseException ignored)
+        {
+            try
+            {
+                OffsetDateTime offsetDateTime = OffsetDateTime.parse(value.trim());
+                return Date.from(offsetDateTime.toInstant());
+            }
+            catch (DateTimeParseException e)
+            {
+                log.warn("Failed to parse workflow time: {}", value);
+                return null;
+            }
+        }
     }
 
     private JsonNode exchangeJson(String endpoint, HttpMethod method, Object body)
@@ -459,6 +734,22 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         }
     }
 
+    private String toJson(Object value)
+    {
+        if (value == null)
+        {
+            return "";
+        }
+        try
+        {
+            return objectMapper.writeValueAsString(value);
+        }
+        catch (JsonProcessingException e)
+        {
+            return String.valueOf(value);
+        }
+    }
+
     private String toTextOrJson(JsonNode node)
     {
         if (node == null || node.isMissingNode() || node.isNull())
@@ -470,6 +761,15 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             return node.asText("");
         }
         return toJson(node);
+    }
+
+    private String truncate(String value, int maxLength)
+    {
+        if (value == null || value.length() <= maxLength)
+        {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private void sleep()

@@ -97,7 +97,7 @@ INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value
 (2301, 1, '审核通过', 'approved', 'audit_review_status', 'success', 'N', '0', 'admin', NOW()),
 (2304, 2, '审核中', 'reviewing', 'audit_review_status', 'primary', 'Y', '0', 'admin', NOW()),
 (2302, 3, '待修改', 'pending', 'audit_review_status', 'warning', 'N', '0', 'admin', NOW()),
-(2303, 4, '驳回归档', 'returned', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW());
+(2303, 4, '驳回', 'returned', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW());
 
 DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2001 AND 2010;
 DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2001 AND 2010;
@@ -140,7 +140,7 @@ VALUES
 (1, 'SF-16542598454', '产品名称1', '送检单位1', '发起人1', '经办人1', 'high', 3, 'uploaded', 'approved', '0', 'v2.0', '/profile/audit/review/防爆电机检验报告_V2.0.pdf', '/profile/audit/review/检测依据文件_A.pdf,/profile/audit/review/检测依据文件_B.pdf', '/profile/audit/review/补充说明附件_A.pdf', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', '当前版本已审核通过'),
 (2, 'SF-16542598455', '产品名称1', '送检单位1', '发起人1', '经办人1', 'high', 3, 'parsed', 'approved', '0', 'v1.0', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '/profile/audit/review/检测依据文件_A.pdf', '/profile/audit/review/补充说明附件_A.pdf', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', '解析完成待归档'),
 (3, 'SF-16542598456', '产品名称1', '送检单位1', '发起人1', '经办人1', 'medium', 3, 'detected', 'approved', '0', 'v1.0', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '/profile/audit/review/检测依据文件_A.pdf', '/profile/audit/review/补充说明附件_A.pdf', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', '检测完成审核通过'),
-(4, 'SF-16542598457', '产品名称1', '送检单位1', '发起人1', '经办人1', 'low', 3, 'detected', 'returned', '1', 'v1.0', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '/profile/audit/review/检测依据文件_A.pdf', '/profile/audit/review/补充说明附件_A.pdf', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', '检测后驳回归档');
+(4, 'SF-16542598457', '产品名称1', '送检单位1', '发起人1', '经办人1', 'low', 3, 'detected', 'returned', '1', 'v1.0', '/profile/audit/review/防爆电机检验报告_V1.0.pdf', '/profile/audit/review/检测依据文件_A.pdf', '/profile/audit/review/补充说明附件_A.pdf', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', 'admin', '2025-12-28 06:28:34', '检测后驳回');
 
 INSERT INTO `audit_review_version`
 (`version_id`, `task_id`, `version_no`, `report_file_name`, `report_file_url`, `main_report_urls`, `basis_file_urls`, `appendix_file_urls`, `detect_status`, `submitter`, `submit_time`, `ai_summary`, `review_opinion`, `current_flag`, `create_by`, `create_time`)
@@ -169,4 +169,4 @@ INSERT INTO `audit_review_stage` (`stage_id`, `version_id`, `stage_code`, `stage
 (9, 4, 'detect', '报告检测', '1', '2024-06-01 14:39:40', '对应智能体-检测结果智能体', '已完成检测，结果建议通过。', 3),
 (10, 5, 'upload', '报告上传', '1', '2024-06-01 14:35:36', '对应智能体-文件校验智能体', '文件校验通过。', 1),
 (11, 5, 'parse', '报告解析', '1', '2024-06-01 14:37:38', '对应智能体-预处理智能体', '解析完成并生成结构化结果。', 2),
-(12, 5, 'detect', '报告检测', '1', '2024-06-01 14:39:40', '对应智能体-检测结果智能体', '检测完成，当前版本已驳回归档。', 3);
+(12, 5, 'detect', '报告检测', '1', '2024-06-01 14:39:40', '对应智能体-检测结果智能体', '检测完成，当前版本已驳回。', 3);

@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditAiFlowStageMapper">
+
+    <resultMap id="AuditAiFlowStageResult" type="AuditAiFlowStage">
+        <result property="stageId" column="stage_id"/>
+        <result property="aiTaskId" column="ai_task_id"/>
+        <result property="runId" column="run_id"/>
+        <result property="workflowTaskId" column="workflow_task_id"/>
+        <result property="workflowTaskNo" column="workflow_task_no"/>
+        <result property="stageCode" column="stage_code"/>
+        <result property="stageInstanceId" column="stage_instance_id"/>
+        <result property="stageName" column="stage_name"/>
+        <result property="stageStatus" column="stage_status"/>
+        <result property="agentName" column="agent_name"/>
+        <result property="startTime" column="start_time"/>
+        <result property="endTime" column="end_time"/>
+        <result property="durationMs" column="duration_ms"/>
+        <result property="stageSummary" column="stage_summary"/>
+        <result property="stageDetail" column="stage_detail"/>
+        <result property="outputJson" column="output_json"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="sortNum" column="sort_num"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="selectAuditAiFlowStageVo">
+        select stage_id, ai_task_id, run_id, workflow_task_id, workflow_task_no, stage_code, stage_instance_id,
+               stage_name, stage_status, agent_name, start_time, end_time, duration_ms, stage_summary,
+               stage_detail, output_json, error_message, sort_num, create_by, create_time, update_by, update_time
+        from audit_ai_flow_stage
+    </sql>
+
+    <select id="selectAuditAiFlowStageListByTaskId" parameterType="Long" resultMap="AuditAiFlowStageResult">
+        <include refid="selectAuditAiFlowStageVo"/>
+        where ai_task_id = #{aiTaskId}
+          and run_id = (
+              select latest.run_id
+              from audit_ai_flow_stage latest
+              where latest.ai_task_id = #{aiTaskId}
+              order by latest.create_time desc, latest.stage_id desc
+              limit 1
+          )
+        order by sort_num asc, stage_id asc
+    </select>
+
+    <select id="selectAuditAiFlowStageListByTaskIdAndRunId" resultMap="AuditAiFlowStageResult">
+        <include refid="selectAuditAiFlowStageVo"/>
+        where ai_task_id = #{aiTaskId}
+          and run_id = #{runId}
+        order by sort_num asc, stage_id asc
+    </select>
+
+    <select id="selectLatestRunIdByTaskId" parameterType="Long" resultType="String">
+        select run_id
+        from audit_ai_flow_stage
+        where ai_task_id = #{aiTaskId}
+        order by create_time desc, stage_id desc
+        limit 1
+    </select>
+
+    <select id="countAuditAiFlowStageByTaskIdAndRunId" resultType="int">
+        select count(1)
+        from audit_ai_flow_stage
+        where ai_task_id = #{aiTaskId}
+          and run_id = #{runId}
+    </select>
+
+    <delete id="deleteAuditAiFlowStageByTaskId" parameterType="Long">
+        delete from audit_ai_flow_stage where ai_task_id = #{aiTaskId}
+    </delete>
+
+    <delete id="deleteAuditAiFlowStageByTaskIdAndRunId">
+        delete from audit_ai_flow_stage
+        where ai_task_id = #{aiTaskId}
+          and run_id = #{runId}
+    </delete>
+
+    <insert id="insertAuditAiFlowStage" parameterType="AuditAiFlowStage" useGeneratedKeys="true" keyProperty="stageId">
+        insert into audit_ai_flow_stage (
+            ai_task_id, run_id, workflow_task_id, workflow_task_no, stage_code, stage_instance_id,
+            stage_name, stage_status, agent_name, start_time, end_time, duration_ms,
+            stage_summary, stage_detail, output_json, error_message, sort_num,
+            create_by, create_time, update_by, update_time
+        ) values (
+            #{aiTaskId}, #{runId}, #{workflowTaskId}, #{workflowTaskNo}, #{stageCode}, #{stageInstanceId},
+            #{stageName}, #{stageStatus}, #{agentName}, #{startTime}, #{endTime}, #{durationMs},
+            #{stageSummary}, #{stageDetail}, #{outputJson}, #{errorMessage}, #{sortNum},
+            #{createBy}, sysdate(), #{updateBy}, sysdate()
+        )
+    </insert>
+
+    <insert id="insertAuditAiFlowStageBatch">
+        insert into audit_ai_flow_stage (
+            ai_task_id, run_id, workflow_task_id, workflow_task_no, stage_code, stage_instance_id,
+            stage_name, stage_status, agent_name, start_time, end_time, duration_ms,
+            stage_summary, stage_detail, output_json, error_message, sort_num,
+            create_by, create_time, update_by, update_time
+        ) values
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.aiTaskId}, #{item.runId}, #{item.workflowTaskId}, #{item.workflowTaskNo},
+                #{item.stageCode}, #{item.stageInstanceId}, #{item.stageName}, #{item.stageStatus},
+                #{item.agentName}, #{item.startTime}, #{item.endTime}, #{item.durationMs},
+                #{item.stageSummary}, #{item.stageDetail}, #{item.outputJson}, #{item.errorMessage},
+                #{item.sortNum}, #{item.createBy}, sysdate(), #{item.updateBy}, sysdate()
+            )
+        </foreach>
+    </insert>
+</mapper>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.audit.AuditWorkflowCallbackEventMapper">
+
+    <resultMap id="AuditWorkflowCallbackEventResult" type="com.ruoyi.system.domain.audit.workflow.AuditWorkflowCallbackEvent">
+        <result property="eventId" column="event_id"/>
+        <result property="callbackEventId" column="callback_event_id"/>
+        <result property="aiTaskId" column="ai_task_id"/>
+        <result property="workflowTaskId" column="workflow_task_id"/>
+        <result property="eventStatus" column="event_status"/>
+        <result property="rawPayload" column="raw_payload"/>
+        <result property="errorMessage" column="error_message"/>
+    </resultMap>
+
+    <select id="selectAuditWorkflowCallbackEventByEventId" parameterType="String" resultMap="AuditWorkflowCallbackEventResult">
+        select event_id, callback_event_id, ai_task_id, workflow_task_id, event_status, raw_payload, error_message
+        from audit_workflow_callback_event
+        where callback_event_id = #{callbackEventId}
+        limit 1
+    </select>
+
+    <insert id="insertAuditWorkflowCallbackEvent" parameterType="com.ruoyi.system.domain.audit.workflow.AuditWorkflowCallbackEvent">
+        insert into audit_workflow_callback_event (
+            callback_event_id, ai_task_id, workflow_task_id, event_status, raw_payload, error_message, create_time, update_time
+        ) values (
+            #{callbackEventId}, #{aiTaskId}, #{workflowTaskId}, #{eventStatus}, #{rawPayload}, #{errorMessage}, sysdate(), sysdate()
+        )
+    </insert>
+
+    <update id="updateAuditWorkflowCallbackEventStatus">
+        update audit_workflow_callback_event
+        set event_status = #{eventStatus},
+            error_message = #{errorMessage},
+            update_time = sysdate()
+        where callback_event_id = #{callbackEventId}
+    </update>
+</mapper>

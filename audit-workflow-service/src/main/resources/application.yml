@@ -1,0 +1,68 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: audit-workflow-service
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/audit_workflow?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: audit_workflow
+    password: AuditWorkflow_2026@Mysql!
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jackson:
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+audit:
+  input:
+    max-file-bytes: 52428800
+    download-timeout-seconds: 30
+  chunk:
+    min-chars: 200
+    max-chars: 1200
+    overlap-chars: 150
+  knowledge:
+    base-url: http://127.0.0.1:6039
+    search-endpoint: /audit/library/vector/workflow-search
+    batch-search-endpoint: /audit/library/vector/workflow-batch-search
+    service-token: ""
+    timeout-seconds: 30
+    batch-size: 10
+    required: true
+  model:
+    provider: aliyun-bailian
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api-key: "sk-c5e08c4a48354a9489bebd11810a229a"
+    default-chat-model: qwen3.5-plus
+    timeout-seconds: 300
+    enable-thinking: false
+    response-format-json: true
+  audit:
+    business-report-strategy: chunk_then_merge
+    include-all-references: false
+    max-reference-count: 30
+    max-reference-chars: 16000
+    chunk-max-reference-count: 4
+    chunk-max-reference-chars: 12000
+    chunk-model-parallelism: 5
+    chunk-model-max-retries: 2
+    chunk-model-timeout-retries: 0
+    chunk-future-timeout-seconds: 660
+    chunk-failure-fatal-ratio: 0.2
+    ai-audit-timeout-seconds: 840
+  callback:
+    enabled: true
+    token: ""
+    timeout-seconds: 20
+    max-retry-count: 3
+    retry-interval-ms: 60000
+    retry-batch-size: 20
+  review:
+    enabled: true
+  task:
+    scan-interval-ms: 5000
+    batch-size: 10
+
+logging:
+  level:
+    com.audit.workflow: INFO

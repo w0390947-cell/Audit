@@ -28,10 +28,9 @@ public class FastGptAuditFinding implements Serializable
     private String content;
 
     /**
-     * 严重程度
-     * 枚举值：high, medium, low
+     * 报告原文引用，用于检测结果展示和问题定位。
      */
-    private String severity;
+    private String quote;
 
     /**
      * 问题位置
@@ -95,14 +94,14 @@ public class FastGptAuditFinding implements Serializable
         this.content = content;
     }
 
-    public String getSeverity()
+    public String getQuote()
     {
-        return severity;
+        return quote;
     }
 
-    public void setSeverity(String severity)
+    public void setQuote(String quote)
     {
-        this.severity = severity;
+        this.quote = quote;
     }
 
     public String getLocation()
@@ -152,7 +151,7 @@ public class FastGptAuditFinding implements Serializable
                 "type='" + type + '\'' +
                 ", title='" + title + '\'' +
                 ", content='" + content + '\'' +
-                ", severity='" + severity + '\'' +
+                ", quote='" + quote + '\'' +
                 ", location='" + location + '\'' +
                 ", pageNo=" + pageNo +
                 ", locationJson='" + locationJson + '\'' +

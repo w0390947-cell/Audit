@@ -27,6 +27,7 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
     private static final Logger log = LoggerFactory.getLogger(AuditAiAnalysisPersistenceServiceImpl.class);
 
     private static final int MAX_FINDING_CONTENT_LENGTH = 1000;
+    private static final int MAX_QUOTE_TEXT_LENGTH = 1000;
 
     private final AuditAiMapper auditAiMapper;
     private final AuditAiQueuePositionService auditAiQueuePositionService;
@@ -70,6 +71,7 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
             finding.setFindingType(defaultIfBlank(item.getType(), "其他"));
             finding.setFindingTitle(defaultIfBlank(item.getTitle(), "AI发现问题"));
             finding.setFindingContent(buildFindingContent(item));
+            finding.setQuoteText(truncateQuote(item.getQuote()));
             finding.setPageNo(item.getPageNo());
             finding.setLocationJson(item.getLocationJson());
             finding.setSortNum(sort++);
@@ -119,7 +121,7 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
     }
 
     /**
-     * 构建发现项内容，将 severity、location、suggestion 合并到 finding_content。
+     * 构建发现项内容，将 location、suggestion 合并到 finding_content。
      */
     private String buildFindingContent(FastGptAuditFinding item)
     {
@@ -133,9 +135,9 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         content.append(baseContent);
 
         String location = item.getLocation();
-        if (!isBlank(location))
+        if (isDisplayableLocation(location))
         {
-            content.append(" 位置：").append(location);
+            content.append(" 位置：").append(location.trim());
         }
 
         String suggestion = item.getSuggestion();
@@ -152,6 +154,32 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         }
 
         return mergedContent;
+    }
+
+    private boolean isDisplayableLocation(String location)
+    {
+        if (isBlank(location))
+        {
+            return false;
+        }
+        String trimmed = location.trim();
+        return !trimmed.startsWith("{") && !trimmed.startsWith("[")
+                && !trimmed.contains("source_chunk_id") && !trimmed.contains("source_chunk_no");
+    }
+
+    private String truncateQuote(String quote)
+    {
+        if (isBlank(quote))
+        {
+            return "";
+        }
+        String trimmedQuote = quote.trim();
+        if (trimmedQuote.length() > MAX_QUOTE_TEXT_LENGTH)
+        {
+            log.warn("Finding quote truncated, originalLength={}", trimmedQuote.length());
+            return trimmedQuote.substring(0, MAX_QUOTE_TEXT_LENGTH);
+        }
+        return trimmedQuote;
     }
 
     /**

@@ -2,12 +2,14 @@ package com.ruoyi.system.service.audit.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.system.config.FastGptProperties;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.domain.audit.FastGptAuditFinding;
 import com.ruoyi.system.domain.audit.FastGptAuditResult;
 import com.ruoyi.system.exception.FastGptAuditException;
 import com.ruoyi.system.service.audit.IFastGptAuditService;
+import com.ruoyi.common.utils.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -800,9 +802,9 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
         String type = normalizeText(findingNode.path("type").asText());
         String title = normalizeText(findingNode.path("title").asText());
         String content = normalizeText(findingNode.path("content").asText());
-        String severity = normalizeText(findingNode.path("severity").asText());
-        JsonNode locationNode = findingNode.path("location");
-        String location = normalizeText(toTextOrJson(locationNode));
+        JsonNode rawLocationNode = findingNode.path("location");
+        JsonNode locationNode = sanitizeLocationNode(rawLocationNode);
+        String location = normalizeText(resolveLocationText(findingNode, rawLocationNode));
         String suggestion = normalizeText(findingNode.path("suggestion").asText());
 
         // content 如果缺失，使用原始 title；如果 title 也没有，丢弃该条。
@@ -827,11 +829,6 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
             title = "AI发现问题";
         }
 
-        if (severity == null || severity.isEmpty())
-        {
-            severity = "medium";
-        }
-
         if (location == null)
         {
             location = "";
@@ -843,13 +840,86 @@ public class FastGptAuditServiceImpl implements IFastGptAuditService
         }
 
         FastGptAuditFinding finding = new FastGptAuditFinding(type, title, content);
-        finding.setSeverity(severity);
+        finding.setQuote(resolveFindingQuote(findingNode));
         finding.setLocation(location);
         finding.setPageNo(resolvePageNo(findingNode));
         finding.setLocationJson(toJson(locationNode));
         finding.setSuggestion(suggestion);
 
         return finding;
+    }
+
+    private JsonNode sanitizeLocationNode(JsonNode locationNode)
+    {
+        if (locationNode == null || !locationNode.isObject())
+        {
+            return locationNode;
+        }
+        ObjectNode sanitized = locationNode.deepCopy();
+        sanitized.remove("source_chunk_id");
+        sanitized.remove("source_chunk_no");
+        return sanitized;
+    }
+
+    private String resolveLocationText(JsonNode findingNode, JsonNode locationNode)
+    {
+        String displayText = firstNonBlankText(findingNode.path("location_text"), findingNode.path("locationText"),
+                findingNode.path("display_location"), findingNode.path("displayLocation"),
+                findingNode.path("location_label"), findingNode.path("locationLabel"));
+        if (StringUtils.isNotBlank(displayText) && !looksLikeJson(displayText))
+        {
+            return displayText.trim();
+        }
+
+        Integer pageNo = resolvePageNo(findingNode);
+        String section = firstNonBlankText(locationNode.path("section"), findingNode.path("section"));
+        if (pageNo != null && StringUtils.isNotBlank(section))
+        {
+            return "第" + pageNo + "页，" + section.trim();
+        }
+        if (pageNo != null)
+        {
+            return "第" + pageNo + "页";
+        }
+        if (StringUtils.isNotBlank(section) && !looksLikeJson(section))
+        {
+            return section.trim();
+        }
+        return "";
+    }
+
+    private String firstNonBlankText(JsonNode... nodes)
+    {
+        for (JsonNode node : nodes)
+        {
+            if (node == null || node.isMissingNode() || node.isNull())
+            {
+                continue;
+            }
+            String value = node.asText("");
+            if (StringUtils.isNotBlank(value))
+            {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private boolean looksLikeJson(String value)
+    {
+        String text = value == null ? "" : value.trim();
+        return text.startsWith("{") || text.startsWith("[") || text.contains("source_chunk_id")
+                || text.contains("source_chunk_no");
+    }
+
+    private String resolveFindingQuote(JsonNode findingNode)
+    {
+        JsonNode locationNode = findingNode.path("location");
+        return StringUtils.defaultIfBlank(findingNode.path("quote").asText(""),
+                StringUtils.defaultIfBlank(findingNode.path("evidence_quote").asText(""),
+                        StringUtils.defaultIfBlank(findingNode.path("source_quote").asText(""),
+                                StringUtils.defaultIfBlank(findingNode.path("original_text").asText(""),
+                                        locationNode.path("quote").asText("")))));
     }
 
     /**

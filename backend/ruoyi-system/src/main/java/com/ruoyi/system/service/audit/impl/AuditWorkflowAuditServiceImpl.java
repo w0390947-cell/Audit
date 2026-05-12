@@ -3,6 +3,7 @@ package com.ruoyi.system.service.audit.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.config.AuditWorkflowProperties;
 import com.ruoyi.system.domain.audit.AuditAiFlowStage;
@@ -610,8 +611,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         for (JsonNode issue : issues)
         {
             FastGptAuditFinding finding = new FastGptAuditFinding();
-            String severity = StringUtils.defaultIfBlank(issue.path("severity").asText(""),
-                    issue.path("risk_level").asText(""));
+            JsonNode rawLocationNode = issue.path("location");
+            JsonNode locationNode = sanitizeLocationNode(rawLocationNode);
             finding.setType(StringUtils.defaultIfBlank(issue.path("type").asText(""),
                     StringUtils.defaultIfBlank(issue.path("finding_type").asText(""), "AI审核问题")));
             finding.setTitle(StringUtils.defaultIfBlank(issue.path("title").asText(""),
@@ -620,14 +621,87 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
                     StringUtils.defaultIfBlank(issue.path("finding_content").asText(""),
                             StringUtils.defaultIfBlank(issue.path("problem").asText(""),
                                     issue.path("title").asText("")))));
-            finding.setSeverity(severity);
-            finding.setLocation(toTextOrJson(issue.path("location")));
+            finding.setQuote(resolveFindingQuote(issue));
+            finding.setLocation(resolveLocationText(issue, rawLocationNode));
             finding.setPageNo(resolvePageNo(issue));
-            finding.setLocationJson(toJson(issue.path("location")));
+            finding.setLocationJson(toJson(locationNode));
             finding.setSuggestion(issue.path("suggestion").asText(""));
             findings.add(finding);
         }
         return findings;
+    }
+
+    private JsonNode sanitizeLocationNode(JsonNode locationNode)
+    {
+        if (locationNode == null || !locationNode.isObject())
+        {
+            return locationNode;
+        }
+        ObjectNode sanitized = locationNode.deepCopy();
+        sanitized.remove("source_chunk_id");
+        sanitized.remove("source_chunk_no");
+        return sanitized;
+    }
+
+    private String resolveLocationText(JsonNode issue, JsonNode location)
+    {
+        String displayText = firstNonBlankText(issue.path("location_text"), issue.path("locationText"),
+                issue.path("display_location"), issue.path("displayLocation"), issue.path("location_label"),
+                issue.path("locationLabel"));
+        if (StringUtils.isNotBlank(displayText) && !looksLikeJson(displayText))
+        {
+            return displayText.trim();
+        }
+
+        Integer pageNo = resolvePageNo(issue);
+        String section = firstNonBlankText(location.path("section"), issue.path("section"));
+        if (pageNo != null && StringUtils.isNotBlank(section))
+        {
+            return "第" + pageNo + "页，" + section.trim();
+        }
+        if (pageNo != null)
+        {
+            return "第" + pageNo + "页";
+        }
+        if (StringUtils.isNotBlank(section) && !looksLikeJson(section))
+        {
+            return section.trim();
+        }
+        return "";
+    }
+
+    private String firstNonBlankText(JsonNode... nodes)
+    {
+        for (JsonNode node : nodes)
+        {
+            if (node == null || node.isMissingNode() || node.isNull())
+            {
+                continue;
+            }
+            String value = node.asText("");
+            if (StringUtils.isNotBlank(value))
+            {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private boolean looksLikeJson(String value)
+    {
+        String text = value == null ? "" : value.trim();
+        return text.startsWith("{") || text.startsWith("[") || text.contains("source_chunk_id")
+                || text.contains("source_chunk_no");
+    }
+
+    private String resolveFindingQuote(JsonNode issue)
+    {
+        JsonNode location = issue.path("location");
+        return StringUtils.defaultIfBlank(issue.path("quote").asText(""),
+                StringUtils.defaultIfBlank(issue.path("evidence_quote").asText(""),
+                        StringUtils.defaultIfBlank(issue.path("source_quote").asText(""),
+                                StringUtils.defaultIfBlank(issue.path("original_text").asText(""),
+                                        location.path("quote").asText("")))));
     }
 
     private boolean isCallbackSuccess(AuditWorkflowCallback callback)

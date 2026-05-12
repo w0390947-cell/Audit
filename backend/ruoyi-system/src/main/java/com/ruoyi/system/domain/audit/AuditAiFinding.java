@@ -16,6 +16,8 @@ public class AuditAiFinding implements Serializable
 
     private String findingContent;
 
+    private String quoteText;
+
     private Integer pageNo;
 
     private String locationJson;
@@ -70,6 +72,16 @@ public class AuditAiFinding implements Serializable
     public void setFindingContent(String findingContent)
     {
         this.findingContent = findingContent;
+    }
+
+    public String getQuoteText()
+    {
+        return quoteText;
+    }
+
+    public void setQuoteText(String quoteText)
+    {
+        this.quoteText = quoteText;
     }
 
     public Integer getPageNo()

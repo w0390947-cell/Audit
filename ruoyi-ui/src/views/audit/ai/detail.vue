@@ -133,6 +133,10 @@
               <div v-for="(line, lineIndex) in issueLines(item)" :key="'issue_' + index + '_' + lineIndex" class="issue-line">
                 {{ line }}
               </div>
+              <div v-if="issueQuote(item)" class="issue-quote">
+                <div class="issue-quote-label">原文引用</div>
+                <div class="issue-quote-text">{{ issueQuote(item) }}</div>
+              </div>
             </div>
           </div>
           <div v-else class="result-empty">暂无检测结果</div>
@@ -258,6 +262,7 @@ export default {
           issueType: item.findingType,
           issueTitle: this.formatFindingTitle(item),
           issueContent: item.findingContent,
+          quoteText: item.quoteText,
           pageNo: item.pageNo,
           locationJson: item.locationJson
         }))
@@ -1050,17 +1055,48 @@ export default {
         .map(item => item.trim())
         .filter(Boolean)
     },
+    sanitizeIssueContent(text) {
+      if (!text) {
+        return ''
+      }
+      return String(text).replace(/位置：\{[^{}]*\}/g, (matched) => {
+        const jsonText = matched.replace(/^位置：/, '')
+        const location = this.parseLocationJson(jsonText)
+        const displayText = this.formatLocationText(location)
+        return displayText ? '位置：' + displayText : ''
+      })
+    },
+    formatLocationText(location) {
+      if (!location || typeof location !== 'object') {
+        return ''
+      }
+      const pageNo = this.normalizePageNo(location.page || location.pageNo || location.page_no)
+      const section = String(location.section || '').trim()
+      if (pageNo && section) {
+        return '第' + pageNo + '页，' + section
+      }
+      if (pageNo) {
+        return '第' + pageNo + '页'
+      }
+      return section
+    },
     formatFindingTitle(item) {
       const type = item.findingType || '其他'
       const title = item.findingTitle || 'AI发现问题'
       return '识别异常类型：' + type + ' - ' + title
     },
     issueLines(item) {
-      const lines = this.splitStructuredText(item.issueContent)
+      const lines = this.splitStructuredText(this.sanitizeIssueContent(item.issueContent))
       if (lines.length) {
         return lines
       }
       return ['暂无问题描述']
+    },
+    issueQuote(item) {
+      if (!item) {
+        return ''
+      }
+      return String(item.quoteText || '').trim()
     },
     submitDecision(reviewStatus) {
       const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId
@@ -1525,6 +1561,27 @@ export default {
   color: #606266;
   font-size: 13px;
   line-height: 1.9;
+}
+
+.issue-quote {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #409eff;
+  background: #f5faff;
+}
+
+.issue-quote-label {
+  margin-bottom: 4px;
+  color: #409eff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.issue-quote-text {
+  color: #303133;
+  font-size: 13px;
+  line-height: 1.8;
+  word-break: break-word;
 }
 
 .result-empty {

@@ -14,6 +14,8 @@ public class AuditAssetRecord extends BaseEntity
 
     private Long reviewTaskId;
 
+    private Long libraryResourceId;
+
     private Long[] assetIds;
 
     @Excel(name = "任务编号")
@@ -81,6 +83,16 @@ public class AuditAssetRecord extends BaseEntity
     public void setReviewTaskId(Long reviewTaskId)
     {
         this.reviewTaskId = reviewTaskId;
+    }
+
+    public Long getLibraryResourceId()
+    {
+        return libraryResourceId;
+    }
+
+    public void setLibraryResourceId(Long libraryResourceId)
+    {
+        this.libraryResourceId = libraryResourceId;
     }
 
     public Long[] getAssetIds()

@@ -7,6 +7,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <resultMap id="AuditAssetRecordResult" type="AuditAssetRecord">
         <result property="assetId" column="asset_id"/>
         <result property="reviewTaskId" column="review_task_id"/>
+        <result property="libraryResourceId" column="library_resource_id"/>
         <result property="taskNo" column="task_no"/>
         <result property="productName" column="product_name"/>
         <result property="deliveryUnit" column="delivery_unit"/>
@@ -61,7 +62,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="selectAuditAssetRecordVo">
-        select asset_id, review_task_id, task_no, product_name, delivery_unit, submitter, reviewer, permission_owner,
+        select asset_id, review_task_id, library_resource_id, task_no, product_name, delivery_unit, submitter, reviewer, permission_owner,
                ai_analysis_count, current_ai_version, review_status, review_time, report_file_name, report_file_url,
                ai_opinion, final_opinion, del_flag, create_by, create_time, update_by, update_time, remark
         from audit_asset_record
@@ -88,7 +89,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 and date_format(review_time, '%y%m%d') &lt;= date_format(#{params.endReviewTime}, '%y%m%d')
             </if>
         </where>
-        order by review_time desc, asset_id desc
+        order by coalesce(review_time, create_time) desc, asset_id desc
     </select>
 
     <select id="selectAuditAssetAllList" resultMap="AuditAssetRecordResult">
@@ -100,6 +101,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectAuditAssetRecordById" parameterType="Long" resultMap="AuditAssetRecordResult">
         <include refid="selectAuditAssetRecordVo"/>
         where asset_id = #{assetId} and del_flag = '0'
+    </select>
+
+    <select id="selectAuditAssetRecordByLibraryResourceId" parameterType="Long" resultMap="AuditAssetRecordResult">
+        <include refid="selectAuditAssetRecordVo"/>
+        where library_resource_id = #{libraryResourceId} and del_flag = '0'
+        order by asset_id desc
+        limit 1
     </select>
 
     <select id="selectAuditAssetAiVersionListByAssetId" parameterType="Long" resultMap="AuditAssetAiVersionResult">
@@ -162,6 +170,54 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </set>
         where asset_id = #{assetId}
     </update>
+
+    <update id="updateAuditAssetReviewDecision" parameterType="AuditAssetRecord">
+        update audit_asset_record
+        <set>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="reviewer != null">reviewer = #{reviewer},</if>
+            <if test="reviewTime != null">review_time = #{reviewTime},</if>
+            <if test="aiOpinion != null">ai_opinion = #{aiOpinion},</if>
+            <if test="finalOpinion != null">final_opinion = #{finalOpinion},</if>
+            update_by = #{updateBy},
+            update_time = sysdate()
+        </set>
+        where asset_id = #{assetId}
+    </update>
+
+    <update id="resetAuditAssetForLibraryResource" parameterType="AuditAssetRecord">
+        update audit_asset_record
+        set task_no = #{taskNo},
+            product_name = #{productName},
+            delivery_unit = #{deliveryUnit},
+            submitter = #{submitter},
+            reviewer = '',
+            permission_owner = '',
+            ai_analysis_count = #{aiAnalysisCount},
+            current_ai_version = #{currentAiVersion},
+            review_status = #{reviewStatus},
+            review_time = null,
+            report_file_name = #{reportFileName},
+            report_file_url = #{reportFileUrl},
+            ai_opinion = #{aiOpinion},
+            final_opinion = #{finalOpinion},
+            update_by = #{updateBy},
+            update_time = sysdate(),
+            remark = #{remark}
+        where library_resource_id = #{libraryResourceId}
+          and del_flag = '0'
+    </update>
+
+    <insert id="insertAuditAssetRecord" parameterType="AuditAssetRecord" useGeneratedKeys="true" keyProperty="assetId">
+        insert into audit_asset_record
+        (review_task_id, library_resource_id, task_no, product_name, delivery_unit, submitter, reviewer,
+         permission_owner, ai_analysis_count, current_ai_version, review_status, review_time, report_file_name,
+         report_file_url, ai_opinion, final_opinion, del_flag, create_by, create_time, update_by, update_time, remark)
+        values
+        (#{reviewTaskId}, #{libraryResourceId}, #{taskNo}, #{productName}, #{deliveryUnit}, #{submitter}, #{reviewer},
+         #{permissionOwner}, #{aiAnalysisCount}, #{currentAiVersion}, #{reviewStatus}, #{reviewTime}, #{reportFileName},
+         #{reportFileUrl}, #{aiOpinion}, #{finalOpinion}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
+    </insert>
 
     <insert id="insertAuditAssetAiVersion" parameterType="AuditAssetAiVersion" useGeneratedKeys="true" keyProperty="versionId">
         insert into audit_asset_ai_version

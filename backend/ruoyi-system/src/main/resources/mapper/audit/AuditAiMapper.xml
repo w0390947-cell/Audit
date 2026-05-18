@@ -51,11 +51,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select a.ai_task_id, a.review_task_id, a.review_version_id, a.task_no, a.product_name, a.delivery_unit, a.submitter, a.priority,
                a.queue_position, a.task_status, a.estimated_duration, a.progress_percent, a.progress_text,
                a.ai_analysis_count, a.review_status, a.report_file_name, a.report_file_url,
-               r.basis_file_urls,
+               coalesce(v.basis_file_urls, r.basis_file_urls) as basis_file_urls,
                a.ai_summary, a.review_opinion, a.reviewer, a.submit_time, a.del_flag, a.create_by, a.create_time,
                a.update_by, a.update_time, a.remark
         from audit_ai_task a
         left join audit_review_task r on r.task_id = a.review_task_id
+        left join audit_review_version v on v.version_id = a.review_version_id
     </sql>
 
     <select id="selectAuditAiTaskList" parameterType="AuditAiTask" resultMap="AuditAiTaskResult">
@@ -194,6 +195,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             update_by = #{updateBy},
             update_time = sysdate()
         where ai_task_id = #{aiTaskId}
+    </update>
+
+    <update id="updateAuditAiEstimatedDuration">
+        update audit_ai_task
+        set estimated_duration = #{estimatedDuration},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where ai_task_id = #{aiTaskId}
+          and del_flag = '0'
     </update>
 
     <update id="updateAuditAiReviewDecision" parameterType="AuditAiTask">

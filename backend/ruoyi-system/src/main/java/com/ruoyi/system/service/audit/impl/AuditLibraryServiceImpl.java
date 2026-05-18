@@ -5,29 +5,36 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.system.domain.audit.AuditAssetRecord;
 import com.ruoyi.system.domain.audit.AuditCommonResource;
 import com.ruoyi.system.domain.audit.AuditCommonResourceVersion;
 import com.ruoyi.system.domain.audit.AuditLibraryFolder;
 import com.ruoyi.system.domain.audit.AuditTaskResource;
+import com.ruoyi.system.mapper.audit.AuditAssetMapper;
 import com.ruoyi.system.mapper.audit.AuditLibraryMapper;
 import com.ruoyi.system.service.audit.IAuditLibraryService;
+import com.ruoyi.system.service.audit.support.AuditBusinessPermissionUtils;
 import com.ruoyi.system.service.audit.vector.AuditVectorLifecycleService;
 
 @Service
 public class AuditLibraryServiceImpl implements IAuditLibraryService
 {
-    private static final String RESOURCE_STATUS_PENDING = "pending";
+    private static final String RESOURCE_STATUS_REVIEWING = "reviewing";
 
-    private static final String RESOURCE_PROGRESS_PENDING = "等待向量化任务执行";
+    private static final String RESOURCE_PROGRESS_REVIEWING = "待审核通过后向量化";
 
     @Autowired
     private AuditLibraryMapper auditLibraryMapper;
+
+    @Autowired
+    private AuditAssetMapper auditAssetMapper;
 
     @Autowired
     private ObjectProvider<AuditVectorLifecycleService> auditVectorLifecycleServiceProvider;
@@ -127,6 +134,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Transactional(rollbackFor = Exception.class)
     public int insertAuditCommonResource(AuditCommonResource resource)
     {
+        normalizeCommonSubmitterResource(resource);
         if (StringUtils.isBlank(resource.getCurrentVersionNo()))
         {
             resource.setCurrentVersionNo("v1.0");
@@ -135,14 +143,8 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
         {
             resource.setLatestModifyTime(new Date());
         }
-        if (StringUtils.isBlank(resource.getStorageStatus()))
-        {
-            resource.setStorageStatus(RESOURCE_STATUS_PENDING);
-        }
-        if (StringUtils.isBlank(resource.getProgressText()))
-        {
-            resource.setProgressText(RESOURCE_PROGRESS_PENDING);
-        }
+        resource.setStorageStatus(RESOURCE_STATUS_REVIEWING);
+        resource.setProgressText(RESOURCE_PROGRESS_REVIEWING);
         resource.setCreator(StringUtils.defaultIfBlank(resource.getCreator(), resource.getCreateBy()));
         int rows = auditLibraryMapper.insertAuditCommonResource(resource);
         if (rows > 0)
@@ -156,13 +158,25 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             version.setCreator(resource.getCreator());
             version.setCreateTime(resource.getLatestModifyTime());
             auditLibraryMapper.insertAuditCommonResourceVersion(version);
-            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
-            if (lifecycleService != null)
-            {
-                lifecycleService.onCommonResourceCreated(resource);
-            }
+            createOrResetAssetRecord(resource);
         }
         return rows;
+    }
+
+    private void normalizeCommonSubmitterResource(AuditCommonResource resource)
+    {
+        if (!AuditBusinessPermissionUtils.isCommonSubmitterOnly() || resource == null)
+        {
+            return;
+        }
+        String username = AuditBusinessPermissionUtils.getCurrentUsername();
+        if (StringUtils.isBlank(username))
+        {
+            return;
+        }
+        resource.setCreateBy(StringUtils.defaultIfBlank(resource.getCreateBy(), username));
+        resource.setUpdateBy(StringUtils.defaultIfBlank(resource.getUpdateBy(), username));
+        resource.setCreator(username);
     }
 
     @Override
@@ -179,6 +193,13 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
         {
             resource.setCurrentVersionNo(nextVersionNo(detail.getCurrentVersionNo()));
         }
+        boolean fileChanged = StringUtils.isNotBlank(resource.getFileUrl())
+                && !Objects.equals(detail.getFileUrl(), resource.getFileUrl());
+        if (fileChanged)
+        {
+            resource.setStorageStatus(RESOURCE_STATUS_REVIEWING);
+            resource.setProgressText(RESOURCE_PROGRESS_REVIEWING);
+        }
         int rows = auditLibraryMapper.updateAuditCommonResource(resource);
         if (rows > 0)
         {
@@ -193,7 +214,15 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             auditLibraryMapper.insertAuditCommonResourceVersion(version);
             AuditCommonResource after = auditLibraryMapper.selectAuditCommonResourceById(resource.getResourceId());
             AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
-            if (lifecycleService != null)
+            if (fileChanged)
+            {
+                createOrResetAssetRecord(after);
+                if (lifecycleService != null)
+                {
+                    lifecycleService.onCommonResourcesDeleted(new ArrayList<>(Arrays.asList(after.getResourceId())));
+                }
+            }
+            else if (lifecycleService != null)
             {
                 lifecycleService.onCommonResourceUpdated(detail, after);
             }
@@ -272,6 +301,47 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             versionNumber = Integer.parseInt(numberText) + 1;
         }
         return "v" + versionNumber + ".0";
+    }
+
+    private void createOrResetAssetRecord(AuditCommonResource resource)
+    {
+        if (resource == null || resource.getResourceId() == null)
+        {
+            return;
+        }
+        AuditAssetRecord record = buildAssetRecord(resource);
+        AuditAssetRecord existing = auditAssetMapper.selectAuditAssetRecordByLibraryResourceId(resource.getResourceId());
+        if (existing == null)
+        {
+            auditAssetMapper.insertAuditAssetRecord(record);
+        }
+        else
+        {
+            auditAssetMapper.resetAuditAssetForLibraryResource(record);
+        }
+    }
+
+    private AuditAssetRecord buildAssetRecord(AuditCommonResource resource)
+    {
+        AuditAssetRecord record = new AuditAssetRecord();
+        record.setLibraryResourceId(resource.getResourceId());
+        record.setTaskNo("LIB-" + resource.getResourceId());
+        record.setProductName(StringUtils.defaultIfBlank(resource.getDocumentName(), resource.getFileName()));
+        record.setDeliveryUnit(StringUtils.defaultString(resource.getFolderName()));
+        record.setSubmitter(StringUtils.defaultIfBlank(resource.getCreator(), resource.getCreateBy()));
+        record.setReviewer("");
+        record.setPermissionOwner("");
+        record.setAiAnalysisCount(0);
+        record.setCurrentAiVersion(StringUtils.defaultIfBlank(resource.getCurrentVersionNo(), "v1.0"));
+        record.setReviewStatus("reviewing");
+        record.setReportFileName(resource.getFileName());
+        record.setReportFileUrl(resource.getFileUrl());
+        record.setAiOpinion("文件已提交，等待审核资源列表人工审核。");
+        record.setFinalOpinion("待审核通过后启动向量化入库。");
+        record.setCreateBy(StringUtils.defaultIfBlank(resource.getCreateBy(), resource.getUpdateBy()));
+        record.setUpdateBy(StringUtils.defaultIfBlank(resource.getUpdateBy(), resource.getCreateBy()));
+        record.setRemark("由审核文件库上传自动创建");
+        return record;
     }
 
     private Set<Long> collectDescendantFolderIds(Long[] folderIds)

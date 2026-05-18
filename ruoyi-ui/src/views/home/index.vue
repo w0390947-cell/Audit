@@ -20,7 +20,7 @@
         </div>
         <div class="asset-status-grid">
           <div class="asset-status-item approved">
-            <span>审核通过归档</span>
+            <span>审核通过</span>
             <strong>{{ approvedCount }}</strong>
           </div>
           <div class="asset-status-item returned">
@@ -100,6 +100,7 @@
 import * as echarts from 'echarts'
 import { listAssetStats } from '@/api/audit/asset'
 import { getAiStats } from '@/api/audit/ai'
+import { getReviewStats as fetchReviewStats } from '@/api/audit/review'
 
 export default {
   name: 'Home',
@@ -121,6 +122,18 @@ export default {
         pieLabels: [],
         pieData: []
       },
+      reviewStats: {
+        totalCount: 0,
+        reviewingCount: 0,
+        pendingCount: 0,
+        returnedCount: 0,
+        approvedCount: 0,
+        archivedCount: 0,
+        todayNewCount: 0,
+        todoCount: 0,
+        pausedCount: 0,
+        highPriorityPendingCount: 0
+      },
       aiStats: {
         queueGroupCount: 0,
         totalTaskCount: 0,
@@ -134,7 +147,11 @@ export default {
         mediumCount: 0,
         lowCount: 0
       },
-      chartInstances: [],
+      charts: {
+        assetTrend: null,
+        assetPie: null,
+        aiPriority: null
+      },
       todos: [
         { label: '等待审核确认', value: '--' },
         { label: 'AI队列执行中', value: '--' },
@@ -145,7 +162,8 @@ export default {
   },
   computed: {
     approvedCount() {
-      const index = (this.assetStats.pieLabels || []).indexOf('审核通过归档')
+      const labels = this.assetStats.pieLabels || []
+      const index = labels.indexOf('审核通过') >= 0 ? labels.indexOf('审核通过') : labels.indexOf('审核通过归档')
       return index >= 0 ? (this.assetStats.pieData || [])[index] || 0 : 0
     },
     returnedCount() {
@@ -155,6 +173,7 @@ export default {
     }
   },
   created() {
+    this.getReviewStats()
     this.getAssetStats()
     this.getAiStats()
   },
@@ -163,9 +182,24 @@ export default {
   },
   beforeDestroy() {
     window.removeEventListener('resize', this.handleResize)
-    this.chartInstances.forEach(item => item && item.dispose())
+    Object.keys(this.charts).forEach(key => {
+      if (this.charts[key]) {
+        this.charts[key].dispose()
+        this.charts[key] = null
+      }
+    })
   },
   methods: {
+    getReviewStats() {
+      fetchReviewStats().then(response => {
+        this.reviewStats = response.data || this.reviewStats
+        this.refreshReviewMetrics()
+        this.refreshTodos()
+      }).catch(() => {
+        this.refreshReviewMetrics()
+        this.refreshTodos()
+      })
+    },
     getAssetStats() {
       listAssetStats().then(response => {
         this.assetStats = response.data || this.assetStats
@@ -193,6 +227,7 @@ export default {
           }
           return item
         })
+        this.refreshTodos()
         this.$nextTick(() => {
           this.renderAiPriorityChart()
         })
@@ -202,6 +237,25 @@ export default {
         })
       })
     },
+    refreshReviewMetrics() {
+      this.metrics = this.metrics.map(item => {
+        if (item.label === '审核任务') {
+          return { ...item, value: this.reviewStats.totalCount || 0 }
+        }
+        if (item.label === '待处理') {
+          return { ...item, value: this.reviewStats.todoCount || 0 }
+        }
+        return item
+      })
+    },
+    refreshTodos() {
+      this.todos = [
+        { label: '等待审核确认', value: this.reviewStats.reviewingCount || 0 },
+        { label: 'AI队列执行中', value: this.aiStats.executingCount || 0 },
+        { label: '待修改报告', value: this.reviewStats.pendingCount || 0 },
+        { label: '今日新增任务', value: this.reviewStats.todayNewCount || 0 }
+      ]
+    },
     renderAssetCharts() {
       this.renderAssetTrendChart()
       this.renderAssetPieChart()
@@ -210,7 +264,8 @@ export default {
       if (!this.$refs.assetTrendChart) {
         return
       }
-      const chart = echarts.init(this.$refs.assetTrendChart)
+      const chart = this.charts.assetTrend || echarts.init(this.$refs.assetTrendChart)
+      this.charts.assetTrend = chart
       chart.setOption({
         color: ['#2f88ec', '#ef6d68'],
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -241,8 +296,7 @@ export default {
           { name: '审核通过', type: 'bar', barWidth: 10, data: this.assetStats.monthApprovedData || [] },
           { name: '驳回', type: 'bar', barWidth: 10, data: this.assetStats.monthReturnedData || [] }
         ]
-      })
-      this.saveChart(chart)
+      }, true)
     },
     renderAssetPieChart() {
       if (!this.$refs.assetPieChart) {
@@ -250,7 +304,8 @@ export default {
       }
       const labels = this.assetStats.pieLabels || []
       const values = this.assetStats.pieData || []
-      const chart = echarts.init(this.$refs.assetPieChart)
+      const chart = this.charts.assetPie || echarts.init(this.$refs.assetPieChart)
+      this.charts.assetPie = chart
       chart.setOption({
         color: ['#2f88ec', '#ef6d68'],
         tooltip: { trigger: 'item' },
@@ -277,14 +332,14 @@ export default {
             }))
           }
         ]
-      })
-      this.saveChart(chart)
+      }, true)
     },
     renderAiPriorityChart() {
       if (!this.$refs.aiPriorityChart) {
         return
       }
-      const chart = echarts.init(this.$refs.aiPriorityChart)
+      const chart = this.charts.aiPriority || echarts.init(this.$refs.aiPriorityChart)
+      this.charts.aiPriority = chart
       chart.setOption({
         color: ['#2f88ec', '#4cc3d9', '#ffb44c'],
         tooltip: {
@@ -314,19 +369,10 @@ export default {
             ]
           }
         ]
-      })
-      this.saveChart(chart)
-    },
-    saveChart(chart) {
-      const old = this.chartInstances.find(item => item.getDom() === chart.getDom())
-      if (old) {
-        old.dispose()
-        this.chartInstances = this.chartInstances.filter(item => item !== old)
-      }
-      this.chartInstances.push(chart)
+      }, true)
     },
     handleResize() {
-      this.chartInstances.forEach(item => item && item.resize())
+      Object.values(this.charts).forEach(item => item && item.resize())
     }
   }
 }

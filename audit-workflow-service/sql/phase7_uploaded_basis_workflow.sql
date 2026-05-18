@@ -12,25 +12,33 @@ INSERT INTO audit_workflow (
   update_time
 ) VALUES (
   'uploaded_basis_document_audit',
-  '用户上传依据文件审核工作流',
-  '待审核文件 + 用户本次上传依据文件审核；不调用业务知识库检索接口',
+  '上传依据审核',
+  '待审核文件 + 用户本次上传依据文件审核；如果业务入参提供 knowledge_scope，则同时限定调用业务知识库检索',
   JSON_OBJECT(
     'required', JSON_ARRAY('file_url', 'basis_files'),
     'basis_files_min_size', 1
   ),
   JSON_OBJECT(
+    'provider', 'business_audit_library',
+    'search_endpoint', '/audit/library/vector/workflow-search',
+    'batch_search_endpoint', '/audit/library/vector/workflow-batch-search',
     'source', 'uploaded_basis_files',
-    'disable_business_knowledge_search', true
+    'retrieval_config', JSON_OBJECT(
+      'top_k', 8,
+      'hybrid', true,
+      'rerank', false,
+      'max_query_chars', 1000
+    )
   ),
   JSON_OBJECT(
-    'strategy', 'uploaded_basis_local_match',
+    'strategy', 'uploaded_basis_temp_vector',
     'top_k', 4,
     'max_query_chars', 1000
   ),
   '## 角色与核心任务
-你是专业报告审核员，严格依据**用户本次上传的依据文件内容**，对用户提供的待审阅报告进行全面合规审查。
+你是专业报告审核员，严格依据**用户本次上传的依据文件内容**以及**业务系统明确传入的已选审核文件库检索结果**，对用户提供的待审阅报告进行全面合规审查。
 ## 严格约束规则
-唯一判定标准：仅以本次给到的上传依据文件内容为全部审核依据，禁止调用业务知识库、模型自身知识、行业经验、主观认知、外部规则进行额外判定；无对应依据的内容不得判定为问题。
+唯一判定标准：仅以本次给到的上传依据文件内容和业务系统明确传入的已选审核文件库检索结果为全部审核依据，禁止调用未被业务系统选中的知识库内容、模型自身知识、行业经验、主观认知、外部规则进行额外判定；无对应依据的内容不得判定为问题。
 内容审查要求：逐段比对报告原文与上传依据文件，全面筛查不符、缺失、错误、违规、表述不一致等全部问题，不遗漏、不夸大、不虚构问题。
 分片审查要求：如果输入只包含一个报告片段，只审核该片段，不要推断其他片段内容；如果本片段没有可判定问题，按无问题 JSON 返回。
 依据不足要求：如果上传依据文件没有覆盖待审内容，必须在 warnings 中提示依据不足或需人工复核，不得直接判断通过。
@@ -91,7 +99,7 @@ content 必须完整说明问题事实，不能以“标注为”“描述为”
 }',
   JSON_OBJECT(
     'format', 'business_report_findings',
-    'compatible_fields', JSON_ARRAY('findings', 'issues')
+    'compatible_fields', JSON_ARRAY('findings')
   ),
   1,
   NOW(),
@@ -125,8 +133,9 @@ INSERT INTO audit_workflow_node (
 ('uploaded_basis_document_audit', 'target_file_parse', '待审核文件解析', 'FILE_PARSE', 20, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
 ('uploaded_basis_document_audit', 'basis_file_parse', '上传依据文件解析', 'BASIS_FILE_PARSE', 30, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
 ('uploaded_basis_document_audit', 'target_text_split', '待审核文本切分', 'TEXT_SPLIT', 40, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
-('uploaded_basis_document_audit', 'basis_pack_or_match', '上传依据本地匹配', 'UPLOADED_BASIS_MATCH', 50, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
-('uploaded_basis_document_audit', 'ai_audit', 'AI审核', 'AI_AUDIT', 60, JSON_OBJECT('mock', false, 'audit_mode', 'business_report_findings'), 1, NOW(), NOW()),
-('uploaded_basis_document_audit', 'result_validate', '结果校验', 'RESULT_VALIDATE', 70, JSON_OBJECT('mock', false, 'audit_mode', 'business_report_findings'), 1, NOW(), NOW()),
-('uploaded_basis_document_audit', 'result_save', '结果保存', 'RESULT_SAVE', 80, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
-('uploaded_basis_document_audit', 'callback', '回调通知', 'CALLBACK', 90, JSON_OBJECT('mock', false), 1, NOW(), NOW());
+('uploaded_basis_document_audit', 'selected_library_retrieve', '已选知识库检索', 'KNOWLEDGE_RETRIEVE', 50, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
+('uploaded_basis_document_audit', 'basis_pack_or_match', '上传依据本地匹配', 'UPLOADED_BASIS_MATCH', 60, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
+('uploaded_basis_document_audit', 'ai_audit', 'AI审核', 'AI_AUDIT', 70, JSON_OBJECT('mock', false, 'audit_mode', 'business_report_findings'), 1, NOW(), NOW()),
+('uploaded_basis_document_audit', 'result_validate', '结果校验', 'RESULT_VALIDATE', 80, JSON_OBJECT('mock', false, 'audit_mode', 'business_report_findings'), 1, NOW(), NOW()),
+('uploaded_basis_document_audit', 'result_save', '结果保存', 'RESULT_SAVE', 90, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
+('uploaded_basis_document_audit', 'callback', '回调通知', 'CALLBACK', 100, JSON_OBJECT('mock', false), 1, NOW(), NOW());

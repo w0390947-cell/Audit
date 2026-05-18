@@ -150,12 +150,21 @@
                 @click="handleDetail(scope.row)"
                 v-hasPermi="['audit:ai:detail']"
               >详情</el-button>
-              <el-button
-                size="mini"
-                type="text"
-                @click="handleRaisePriority(scope.row)"
-                v-hasPermi="['audit:ai:raisePriority']"
-              >提升优先级</el-button>
+              <el-tooltip
+                :disabled="canRaisePriority(scope.row)"
+                content="已是最高优先级"
+                placement="top"
+              >
+                <span class="action-button-wrap">
+                  <el-button
+                    size="mini"
+                    type="text"
+                    :disabled="!canRaisePriority(scope.row)"
+                    @click="handleRaisePriority(scope.row)"
+                    v-hasPermi="['audit:ai:raisePriority']"
+                  >提升优先级</el-button>
+                </span>
+              </el-tooltip>
               <el-button
                 size="mini"
                 type="text"
@@ -413,11 +422,17 @@ export default {
       }).catch(() => {})
     },
     handleRaisePriority(row) {
-      const aiTaskIds = row ? [row.aiTaskId] : this.ids
-      if (!aiTaskIds.length) {
+      const selectedRows = row ? [row] : this.taskList.filter(item => this.ids.includes(item.aiTaskId))
+      if (!selectedRows.length) {
         this.$message.warning('请先选择任务')
         return
       }
+      const upgradableRows = selectedRows.filter(item => this.canRaisePriority(item))
+      if (!upgradableRows.length) {
+        this.$message.warning('所选任务已是最高优先级')
+        return
+      }
+      const aiTaskIds = upgradableRows.map(item => item.aiTaskId)
       this.$modal.confirm('是否确认提升所选任务优先级？').then(() => {
         return raiseAiPriority({ aiTaskIds: aiTaskIds })
       }).then(() => {
@@ -425,6 +440,9 @@ export default {
         this.getStats()
         this.getList()
       }).catch(() => {})
+    },
+    canRaisePriority(row) {
+      return !!row && row.priority !== 'high'
     },
     handleDelete(row) {
       const aiTaskIds = row ? [row.aiTaskId] : this.ids
@@ -575,6 +593,11 @@ export default {
 
 .task-table ::v-deep .el-table__body td {
   vertical-align: top;
+}
+
+.action-button-wrap {
+  margin-left: 10px;
+  margin-right: 10px;
 }
 
 .priority-text {

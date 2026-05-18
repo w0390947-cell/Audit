@@ -15,6 +15,8 @@ public interface AuditAssetMapper
 
     AuditAssetRecord selectAuditAssetRecordById(Long assetId);
 
+    AuditAssetRecord selectAuditAssetRecordByLibraryResourceId(Long libraryResourceId);
+
     List<AuditAssetAiVersion> selectAuditAssetAiVersionListByAssetId(Long assetId);
 
     List<AuditAssetAiStep> selectAuditAssetAiStepListByVersionId(Long versionId);
@@ -29,6 +31,12 @@ public interface AuditAssetMapper
             @Param("updateBy") String updateBy);
 
     int updateAuditAssetReport(AuditAssetRecord record);
+
+    int updateAuditAssetReviewDecision(AuditAssetRecord record);
+
+    int resetAuditAssetForLibraryResource(AuditAssetRecord record);
+
+    int insertAuditAssetRecord(AuditAssetRecord record);
 
     int insertAuditAssetAiVersion(AuditAssetAiVersion version);
 

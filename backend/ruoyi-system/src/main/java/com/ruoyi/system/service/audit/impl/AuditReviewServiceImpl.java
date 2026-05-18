@@ -4,19 +4,25 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.domain.audit.AuditAiFinding;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.domain.audit.AuditCommonResource;
 import com.ruoyi.system.domain.audit.AuditLibraryFolder;
+import com.ruoyi.system.domain.audit.AuditReviewBasisFile;
 import com.ruoyi.system.domain.audit.AuditReviewIssue;
 import com.ruoyi.system.domain.audit.AuditReviewStage;
+import com.ruoyi.system.domain.audit.AuditReviewStats;
 import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
 import com.ruoyi.system.domain.audit.AuditUploadedFile;
@@ -24,6 +30,7 @@ import com.ruoyi.system.mapper.audit.AuditAiMapper;
 import com.ruoyi.system.mapper.audit.AuditReviewMapper;
 import com.ruoyi.system.service.audit.IAuditLibraryService;
 import com.ruoyi.system.service.audit.IAuditReviewService;
+import com.ruoyi.system.service.audit.support.AuditBusinessPermissionUtils;
 
 @Service
 public class AuditReviewServiceImpl implements IAuditReviewService
@@ -42,10 +49,22 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     @Autowired
     private AuditAiQueuePositionService auditAiQueuePositionService;
 
+    @Autowired
+    private AuditAiEstimatedDurationAsyncService auditAiEstimatedDurationAsyncService;
+
     @Override
     public List<AuditReviewTask> selectAuditReviewTaskList(AuditReviewTask task)
     {
+        applyCommonSubmitterQueryScope(task);
         return auditReviewMapper.selectAuditReviewTaskList(task);
+    }
+
+    @Override
+    public AuditReviewStats selectAuditReviewStats()
+    {
+        AuditReviewTask scope = new AuditReviewTask();
+        applyCommonSubmitterQueryScope(scope);
+        return auditReviewMapper.selectAuditReviewStats(scope);
     }
 
     @Override
@@ -56,6 +75,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         {
             return null;
         }
+        checkCommonSubmitterTaskAccess(task);
         List<AuditReviewVersion> versionList = auditReviewMapper.selectAuditReviewVersionListByTaskId(taskId);
         task.setVersionList(versionList);
         AuditReviewVersion currentVersion = getCurrentVersion(taskId, versionId, versionList);
@@ -63,6 +83,10 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         if (currentVersion != null)
         {
             task.setCurrentVersionNo(currentVersion.getVersionNo());
+            List<AuditReviewBasisFile> basisFileList =
+                    auditReviewMapper.selectAuditReviewBasisFileListByVersionId(currentVersion.getVersionId());
+            task.setBasisFileList(basisFileList);
+            currentVersion.setBasisFileList(basisFileList);
             task.setStageList(auditReviewMapper.selectAuditReviewStageListByVersionId(currentVersion.getVersionId()));
             task.setIssueList(resolveReviewIssueList(taskId, currentVersion.getVersionId()));
         }
@@ -77,6 +101,8 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     @Override
     public List<AuditReviewVersion> selectAuditReviewVersionListByTaskId(Long taskId)
     {
+        AuditReviewTask task = auditReviewMapper.selectAuditReviewTaskById(taskId);
+        checkCommonSubmitterTaskAccess(task);
         return auditReviewMapper.selectAuditReviewVersionListByTaskId(taskId);
     }
 
@@ -85,9 +111,11 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     public int insertAuditReviewTask(AuditReviewTask task)
     {
         normalizeBeforeCreate(task);
+        normalizeCommonSubmitterCreate(task);
         task.setCurrentVersionNo("v1.0");
         int rows = auditReviewMapper.insertAuditReviewTask(task);
         AuditReviewVersion version = saveSnapshot(task, "v1.0");
+        saveBasisFileSnapshot(task, version);
         archiveUploadedBasisFiles(task);
         createAuditAiTask(task, version);
         return rows;
@@ -102,13 +130,21 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         {
             return 0;
         }
+        checkCommonSubmitterTaskEditable(dbTask);
         normalizeBeforeUpdate(task, dbTask);
+        normalizeCommonSubmitterUpdate(task);
+        boolean shouldCreateAiTask = hasAiInputFileChanged(dbTask, task);
         String nextVersionNo = buildNextVersionNo(task.getTaskId());
         task.setCurrentVersionNo(nextVersionNo);
         int rows = auditReviewMapper.updateAuditReviewTask(task);
         auditReviewMapper.clearCurrentVersionFlag(task.getTaskId());
-        saveSnapshot(task, nextVersionNo);
+        AuditReviewVersion version = saveSnapshot(task, nextVersionNo);
+        saveBasisFileSnapshot(task, version);
         archiveUploadedBasisFiles(task);
+        if (shouldCreateAiTask)
+        {
+            createAuditAiTask(task, version);
+        }
         return rows;
     }
 
@@ -116,6 +152,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     @Transactional(rollbackFor = Exception.class)
     public int deleteAuditReviewTaskByIds(Long[] taskIds)
     {
+        auditReviewMapper.deleteAuditReviewBasisFileByTaskIds(taskIds);
         auditReviewMapper.deleteAuditReviewStageByTaskIds(taskIds);
         auditReviewMapper.deleteAuditReviewIssueByTaskIds(taskIds);
         auditReviewMapper.deleteAuditReviewVersionByTaskIds(taskIds);
@@ -164,6 +201,24 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         }
     }
 
+    private void normalizeCommonSubmitterCreate(AuditReviewTask task)
+    {
+        if (!AuditBusinessPermissionUtils.isCommonSubmitterOnly())
+        {
+            return;
+        }
+        String username = AuditBusinessPermissionUtils.getCurrentUsername();
+        if (StringUtils.isBlank(username))
+        {
+            return;
+        }
+        task.setCreateBy(StringUtils.defaultIfBlank(task.getCreateBy(), username));
+        task.setSponsor(username);
+        task.setTaskStatus("uploaded");
+        task.setReviewStatus("reviewing");
+        task.setProcessFlag("0");
+    }
+
     private void normalizeBeforeUpdate(AuditReviewTask task, AuditReviewTask dbTask)
     {
         task.setTaskNo(StringUtils.isNotBlank(task.getTaskNo()) ? task.getTaskNo() : dbTask.getTaskNo());
@@ -176,13 +231,65 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         task.setSubmitTime(task.getSubmitTime() == null ? DateUtils.getNowDate() : task.getSubmitTime());
     }
 
+    private void normalizeCommonSubmitterUpdate(AuditReviewTask task)
+    {
+        if (!AuditBusinessPermissionUtils.isCommonSubmitterOnly())
+        {
+            return;
+        }
+        String username = AuditBusinessPermissionUtils.getCurrentUsername();
+        if (StringUtils.isBlank(username))
+        {
+            return;
+        }
+        task.setSponsor(username);
+        task.setTaskStatus("uploaded");
+        task.setReviewStatus("reviewing");
+        task.setProcessFlag("0");
+    }
+
+    private void applyCommonSubmitterQueryScope(AuditReviewTask task)
+    {
+        if (!AuditBusinessPermissionUtils.isCommonSubmitterOnly())
+        {
+            return;
+        }
+        String username = AuditBusinessPermissionUtils.getCurrentUsername();
+        if (StringUtils.isNotBlank(username) && task != null)
+        {
+            task.setCreateBy(username);
+        }
+    }
+
+    private void checkCommonSubmitterTaskAccess(AuditReviewTask task)
+    {
+        if (!AuditBusinessPermissionUtils.isCommonSubmitterOnly())
+        {
+            return;
+        }
+        String username = AuditBusinessPermissionUtils.getCurrentUsername();
+        if (task == null || StringUtils.isBlank(username) || !Objects.equals(username, task.getCreateBy()))
+        {
+            throw new ServiceException("无权访问该审核任务");
+        }
+    }
+
+    private void checkCommonSubmitterTaskEditable(AuditReviewTask task)
+    {
+        checkCommonSubmitterTaskAccess(task);
+        if (AuditBusinessPermissionUtils.isCommonSubmitterOnly() && !"returned".equals(task.getReviewStatus()))
+        {
+            throw new ServiceException("普通用户只能修改已退回的审核任务");
+        }
+    }
+
     private AuditReviewVersion saveSnapshot(AuditReviewTask task, String versionNo)
     {
         AuditReviewVersion version = new AuditReviewVersion();
         version.setTaskId(task.getTaskId());
         version.setVersionNo(versionNo);
         version.setReportFileUrl(getPrimaryFileUrl(task.getMainReportUrls()));
-        version.setReportFileName(extractFileName(version.getReportFileUrl(), task.getProductName() + "_" + versionNo + ".pdf"));
+        version.setReportFileName(resolveMainReportFileName(task, version.getReportFileUrl(), versionNo));
         version.setMainReportUrls(task.getMainReportUrls());
         version.setBasisFileUrls(task.getBasisFileUrls());
         version.setAppendixFileUrls(task.getAppendixFileUrls());
@@ -206,6 +313,110 @@ public class AuditReviewServiceImpl implements IAuditReviewService
             auditReviewMapper.insertAuditReviewIssueBatch(issues);
         }
         return version;
+    }
+
+    private boolean hasAiInputFileChanged(AuditReviewTask before, AuditReviewTask after)
+    {
+        return !splitFileUrlSet(before.getMainReportUrls()).equals(splitFileUrlSet(after.getMainReportUrls()))
+                || !splitFileUrlSet(before.getBasisFileUrls()).equals(splitFileUrlSet(after.getBasisFileUrls()));
+    }
+
+    private void saveBasisFileSnapshot(AuditReviewTask task, AuditReviewVersion version)
+    {
+        List<AuditReviewBasisFile> basisFileList = buildBasisFileSnapshot(task, version);
+        if (!basisFileList.isEmpty())
+        {
+            auditReviewMapper.insertAuditReviewBasisFileBatch(basisFileList);
+        }
+        task.setBasisFileList(basisFileList);
+        version.setBasisFileList(basisFileList);
+    }
+
+    private List<AuditReviewBasisFile> buildBasisFileSnapshot(AuditReviewTask task, AuditReviewVersion version)
+    {
+        List<String> urls = splitFileUrlList(task.getBasisFileUrls());
+        if (urls.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        Map<String, AuditReviewBasisFile> submittedMap = new LinkedHashMap<>();
+        if (task.getBasisFileList() != null)
+        {
+            for (AuditReviewBasisFile file : task.getBasisFileList())
+            {
+                if (file != null && StringUtils.isNotBlank(file.getFileUrl()))
+                {
+                    submittedMap.put(file.getFileUrl().trim(), file);
+                }
+            }
+        }
+        Map<String, AuditUploadedFile> uploadedMap = new LinkedHashMap<>();
+        if (task.getBasisUploadedFiles() != null)
+        {
+            for (AuditUploadedFile file : task.getBasisUploadedFiles())
+            {
+                if (file != null && StringUtils.isNotBlank(file.getFileUrl()))
+                {
+                    uploadedMap.put(file.getFileUrl().trim(), file);
+                }
+            }
+        }
+
+        List<AuditReviewBasisFile> result = new ArrayList<>();
+        Set<String> handled = new HashSet<>();
+        int sort = 1;
+        for (String url : urls)
+        {
+            if (!handled.add(url))
+            {
+                continue;
+            }
+            AuditReviewBasisFile submitted = submittedMap.get(url);
+            AuditUploadedFile uploaded = uploadedMap.get(url);
+            AuditReviewBasisFile item = new AuditReviewBasisFile();
+            item.setTaskId(task.getTaskId());
+            item.setVersionId(version.getVersionId());
+            item.setFileUrl(url);
+            item.setSortNum(sort++);
+            item.setCreateBy(StringUtils.defaultString(task.getUpdateBy(), task.getCreateBy()));
+            if (submitted != null)
+            {
+                item.setSourceType(StringUtils.defaultIfBlank(submitted.getSourceType(), AuditReviewBasisFile.SOURCE_UPLOADED));
+                item.setLibraryResourceId(submitted.getLibraryResourceId());
+                item.setFileName(StringUtils.defaultIfBlank(submitted.getFileName(), extractFileName(url, null)));
+                item.setOriginalFilename(StringUtils.defaultIfBlank(submitted.getOriginalFilename(), item.getFileName()));
+                item.setFileSize(submitted.getFileSize());
+            }
+            else if (uploaded != null)
+            {
+                item.setSourceType(AuditReviewBasisFile.SOURCE_UPLOADED);
+                item.setFileName(StringUtils.defaultIfBlank(uploaded.getFileName(), extractFileName(url, null)));
+                item.setOriginalFilename(StringUtils.defaultIfBlank(uploaded.getOriginalFilename(), item.getFileName()));
+                item.setFileSize(uploaded.getFileSize());
+            }
+            else
+            {
+                item.setSourceType(AuditReviewBasisFile.SOURCE_UPLOADED);
+                item.setFileName(extractFileName(url, null));
+                item.setOriginalFilename(item.getFileName());
+            }
+            if (AuditReviewBasisFile.SOURCE_LIBRARY.equals(item.getSourceType()) && item.getLibraryResourceId() == null)
+            {
+                AuditCommonResource resource = findCommonResourceByFileUrl(url);
+                if (resource != null)
+                {
+                    item.setLibraryResourceId(resource.getResourceId());
+                    item.setFileName(StringUtils.defaultIfBlank(item.getFileName(), resource.getFileName()));
+                    item.setFileSize(StringUtils.defaultIfBlank(item.getFileSize(), resource.getFileSize()));
+                }
+                else
+                {
+                    item.setSourceType(AuditReviewBasisFile.SOURCE_UPLOADED);
+                }
+            }
+            result.add(item);
+        }
+        return result;
     }
 
     private AuditReviewVersion getCurrentVersion(Long taskId, Long versionId, List<AuditReviewVersion> versionList)
@@ -289,6 +500,58 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         return index > -1 ? fileUrl.substring(index + 1) : fileUrl;
     }
 
+    private String resolveMainReportFileName(AuditReviewTask task, String reportFileUrl, String versionNo)
+    {
+        String fallback = extractFileName(reportFileUrl, task.getProductName() + "_" + versionNo + ".pdf");
+        List<AuditUploadedFile> uploadedFiles = task.getMainUploadedFiles();
+        if (uploadedFiles != null)
+        {
+            for (AuditUploadedFile uploadedFile : uploadedFiles)
+            {
+                if (uploadedFile != null && reportFileUrl.equals(uploadedFile.getFileUrl()))
+                {
+                    return StringUtils.defaultIfBlank(uploadedFile.getOriginalFilename(),
+                            StringUtils.defaultIfBlank(uploadedFile.getFileName(), fallback));
+                }
+            }
+        }
+        return StringUtils.defaultIfBlank(resolveHistoricalMainReportFileName(task.getTaskId(), reportFileUrl, fallback),
+                fallback);
+    }
+
+    private String resolveHistoricalMainReportFileName(Long taskId, String reportFileUrl, String fallback)
+    {
+        if (taskId == null || StringUtils.isBlank(reportFileUrl))
+        {
+            return "";
+        }
+        List<AuditReviewVersion> versions = auditReviewMapper.selectAuditReviewVersionListByTaskId(taskId);
+        if (versions == null || versions.isEmpty())
+        {
+            return "";
+        }
+        String matchedFallbackName = "";
+        for (AuditReviewVersion version : versions)
+        {
+            if (version == null)
+            {
+                continue;
+            }
+            String versionFileUrl = StringUtils.defaultIfBlank(version.getReportFileUrl(),
+                    getPrimaryFileUrl(version.getMainReportUrls()));
+            if (!reportFileUrl.equals(versionFileUrl) || StringUtils.isBlank(version.getReportFileName()))
+            {
+                continue;
+            }
+            if (!version.getReportFileName().equals(fallback))
+            {
+                return version.getReportFileName();
+            }
+            matchedFallbackName = version.getReportFileName();
+        }
+        return matchedFallbackName;
+    }
+
     private void archiveUploadedBasisFiles(AuditReviewTask task)
     {
         List<AuditUploadedFile> uploadedFiles = task.getBasisUploadedFiles();
@@ -332,7 +595,12 @@ public class AuditReviewServiceImpl implements IAuditReviewService
 
     private Set<String> splitFileUrlSet(String fileUrls)
     {
-        Set<String> result = new HashSet<>();
+        return new HashSet<>(splitFileUrlList(fileUrls));
+    }
+
+    private List<String> splitFileUrlList(String fileUrls)
+    {
+        List<String> result = new ArrayList<>();
         if (StringUtils.isBlank(fileUrls))
         {
             return result;
@@ -349,10 +617,15 @@ public class AuditReviewServiceImpl implements IAuditReviewService
 
     private boolean existsCommonResource(String fileUrl)
     {
+        return findCommonResourceByFileUrl(fileUrl) != null;
+    }
+
+    private AuditCommonResource findCommonResourceByFileUrl(String fileUrl)
+    {
         AuditCommonResource query = new AuditCommonResource();
         query.setFileUrl(fileUrl);
         List<AuditCommonResource> resources = auditLibraryService.selectAuditCommonResourceList(query);
-        return resources != null && !resources.isEmpty();
+        return resources == null || resources.isEmpty() ? null : resources.get(0);
     }
 
     private AuditLibraryFolder ensureBasisResourceFolder(AuditReviewTask task)
@@ -388,6 +661,8 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     {
         String reportFileUrl = StringUtils.defaultIfBlank(getPrimaryFileUrl(reviewVersion.getMainReportUrls()),
                 reviewVersion.getReportFileUrl());
+        String reportFileName = StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
+                extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf"));
         AuditAiTask aiTask = new AuditAiTask();
         aiTask.setReviewTaskId(reviewTask.getTaskId());
         aiTask.setReviewVersionId(reviewVersion.getVersionId());
@@ -398,14 +673,13 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         aiTask.setPriority(reviewTask.getPriority());
         aiTask.setQueuePosition(auditAiQueuePositionService.nextQueuePosition());
         aiTask.setTaskStatus("waiting");
-        aiTask.setEstimatedDuration("3分钟");
+        aiTask.setEstimatedDuration(AuditAiEstimatedDurationAsyncService.PENDING_TEXT);
         aiTask.setProgressPercent(0);
         aiTask.setProgressText("智能体等待处理");
         aiTask.setAiAnalysisCount(0);
         aiTask.setReviewStatus(reviewTask.getReviewStatus());
         aiTask.setReportFileUrl(reportFileUrl);
-        aiTask.setReportFileName(StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
-                extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf")));
+        aiTask.setReportFileName(reportFileName);
         aiTask.setAiSummary("");
         aiTask.setReviewOpinion("");
         aiTask.setReviewer("");
@@ -413,6 +687,8 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         aiTask.setCreateBy(StringUtils.defaultString(reviewTask.getCreateBy(), reviewTask.getUpdateBy()));
         aiTask.setRemark("由审核列表任务自动创建");
         auditAiMapper.insertAuditAiTask(aiTask);
+        auditAiEstimatedDurationAsyncService.estimateAfterCommit(aiTask.getAiTaskId(), reviewTask, reviewVersion,
+                reportFileUrl, reportFileName, aiTask.getCreateBy());
         auditAiQueuePositionService.resortQueuePositions(aiTask.getCreateBy());
     }
 

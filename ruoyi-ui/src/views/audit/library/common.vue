@@ -333,6 +333,7 @@ export default {
     },
     progressWidth(row) {
       const widthMap = {
+        reviewing: '10%',
         pending: '12%',
         parsing: '45%',
         embedding: '75%',
@@ -414,8 +415,8 @@ export default {
           fileSize: this.form.fileSize || '',
           folderId: this.form.folderId,
           folderName: this.form.folderName,
-          storageStatus: this.form.resourceId ? undefined : 'pending',
-          progressText: this.form.resourceId ? undefined : '等待向量化任务执行'
+          storageStatus: this.form.resourceId ? undefined : 'reviewing',
+          progressText: this.form.resourceId ? undefined : '待审核通过后向量化'
         }
         const request = this.form.resourceId ? updateCommonResource(data) : addCommonResource(data)
         request.then(() => {
@@ -574,6 +575,10 @@ export default {
   background: #8aa2bd;
 }
 
+.progress-bar.reviewing span {
+  background: #409eff;
+}
+
 .progress-bar.parsing span {
   background: #36a3f7;
 }
@@ -598,6 +603,10 @@ export default {
 
 .progress-text.pending {
   color: #5f6472;
+}
+
+.progress-text.reviewing {
+  color: #2f88ec;
 }
 
 .progress-text.parsing {
@@ -629,6 +638,12 @@ export default {
   background: #f3f6fa;
   border-color: #dfe7f0;
   color: #64748b;
+}
+
+.status-pill.reviewing {
+  background: #eaf5ff;
+  border-color: #d7eaff;
+  color: #2f88ec;
 }
 
 .status-pill.parsing {

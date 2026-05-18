@@ -29,6 +29,19 @@ audit:
     timeout-seconds: 30
     batch-size: 10
     required: true
+  temp-vector:
+    datasource:
+      url: ${AUDIT_VECTOR_JDBC_URL:jdbc:postgresql://127.0.0.1:5432/audit_vector}
+      username: ${AUDIT_VECTOR_JDBC_USERNAME:audit_vector_user}
+      password: ${AUDIT_VECTOR_JDBC_PASSWORD:301836}
+      driver-class-name: org.postgresql.Driver
+    embedding:
+      base-url: ${AUDIT_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${AUDIT_EMBEDDING_API_KEY:${DASHSCOPE_API_KEY:${audit.model.api-key:}}}
+      model: ${AUDIT_EMBEDDING_MODEL:text-embedding-v4}
+      dimensions: ${AUDIT_EMBEDDING_DIMENSIONS:1024}
+      batch-size: ${AUDIT_EMBEDDING_BATCH_SIZE:8}
+      timeout-seconds: ${AUDIT_EMBEDDING_TIMEOUT_SECONDS:60}
   model:
     provider: aliyun-bailian
     base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -50,6 +63,7 @@ audit:
     chunk-future-timeout-seconds: 660
     chunk-failure-fatal-ratio: 0.2
     ai-audit-timeout-seconds: 840
+    neighbor-context-chars: 400
   callback:
     enabled: true
     token: ""

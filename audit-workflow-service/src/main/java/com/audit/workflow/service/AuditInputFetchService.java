@@ -68,7 +68,7 @@ public class AuditInputFetchService {
             String parseFileUrl = result.getFileUrl();
             String parseFileType = result.getFileType();
             String previewPdfUrl = previewPdfUrl(input, result.getMetadata());
-            if (isWordFile(result.getFileType()) && !previewPdfUrl.isBlank()) {
+            if (isConvertibleSourceFile(result.getFileType()) && !previewPdfUrl.isBlank()) {
                 result.getMetadata().putIfAbsent("original_file_url", result.getFileUrl());
                 result.getMetadata().putIfAbsent("original_file_name", result.getFileName());
                 result.getMetadata().putIfAbsent("original_file_type", result.getFileType());
@@ -196,6 +196,14 @@ public class AuditInputFetchService {
     private boolean isWordFile(String fileType) {
         String normalized = fileType == null ? "" : fileType.toLowerCase(Locale.ROOT).replace(".", "");
         return "doc".equals(normalized) || "docx".equals(normalized);
+    }
+
+    private boolean isConvertibleSourceFile(String fileType) {
+        String normalized = fileType == null ? "" : fileType.toLowerCase(Locale.ROOT).replace(".", "");
+        return switch (normalized) {
+            case "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "txt" -> true;
+            default -> false;
+        };
     }
 
     private String firstNotBlank(Object... values) {

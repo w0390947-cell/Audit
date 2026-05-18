@@ -61,6 +61,14 @@ export function reuploadAsset(data) {
   })
 }
 
+export function reviewAsset(data) {
+  return request({
+    url: '/audit/asset/review',
+    method: 'put',
+    data
+  })
+}
+
 export function delAsset(assetId) {
   return request({
     url: '/audit/asset/' + assetId,

@@ -13,35 +13,47 @@ import com.audit.workflow.repository.AuditTaskContentChunkRepository;
 import com.audit.workflow.retrieval.RetrievalRequest;
 import com.audit.workflow.service.TextChunkService;
 import com.audit.workflow.support.JsonSupport;
+import com.audit.workflow.vector.TemporaryBasisVectorRepository;
+import com.audit.workflow.vector.TemporaryBasisVectorRepository.BasisDocument;
+import com.audit.workflow.vector.TemporaryBasisVectorRepository.BasisVectorChunk;
+import com.audit.workflow.vector.TemporaryBasisVectorRepository.BasisVectorHit;
+import com.audit.workflow.vector.WorkflowEmbeddingClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Component
 public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
 
-    private static final int MAX_BASIS_CHUNKS_PER_TARGET = 4;
-
     private final AuditTaskContentChunkRepository contentChunkRepository;
     private final AuditRetrievalRepository retrievalRepository;
     private final TextChunkService textChunkService;
+    private final WorkflowEmbeddingClient embeddingClient;
+    private final TemporaryBasisVectorRepository vectorRepository;
     private final JsonSupport jsonSupport;
+    private final int topK;
+    private final int maxChunkChars;
 
     public UploadedBasisMatchNodeExecutor(AuditTaskContentChunkRepository contentChunkRepository,
                                           AuditRetrievalRepository retrievalRepository,
                                           TextChunkService textChunkService,
-                                          JsonSupport jsonSupport) {
+                                          WorkflowEmbeddingClient embeddingClient,
+                                          TemporaryBasisVectorRepository vectorRepository,
+                                          JsonSupport jsonSupport,
+                                          @Value("${audit.audit.chunk-max-reference-count:4}") int topK,
+                                          @Value("${audit.audit.chunk-max-reference-chars:12000}") int maxChunkChars) {
         this.contentChunkRepository = contentChunkRepository;
         this.retrievalRepository = retrievalRepository;
         this.textChunkService = textChunkService;
+        this.embeddingClient = embeddingClient;
+        this.vectorRepository = vectorRepository;
         this.jsonSupport = jsonSupport;
+        this.topK = Math.max(1, topK);
+        this.maxChunkChars = Math.max(0, maxChunkChars);
     }
 
     @Override
@@ -60,26 +72,55 @@ public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
             throw new BusinessException("BASIS_FILE_REQUIRED", "basis_files is required");
         }
 
-        List<BasisChunk> basisChunks = splitBasisDocuments(basisDocuments);
-        if (basisChunks.isEmpty()) {
+        List<BasisDocument> basisVectorDocuments = splitBasisDocuments(basisDocuments);
+        int basisChunkCount = basisVectorDocuments.stream().mapToInt(document -> document.chunks().size()).sum();
+        if (basisChunkCount == 0) {
             throw new BusinessException("BASIS_FILE_PARSE_FAILED", "no basis chunks generated");
         }
 
-        retrievalRepository.deleteByTaskId(context.getTask().getTaskId());
+        if (hasKnowledgeScope(context)) {
+            retrievalRepository.deleteUploadedBasisByTaskId(context.getTask().getTaskId());
+        } else {
+            retrievalRepository.deleteByTaskId(context.getTask().getTaskId());
+        }
+
+        String namespace = vectorRepository.namespace(context.getTask());
+        try {
+            vectorRepository.resetNamespace(namespace);
+            indexBasisDocuments(context, namespace, basisVectorDocuments);
+        } catch (Exception ex) {
+            throw new BusinessException("TEMP_BASIS_VECTOR_INDEX_FAILED", ex.getMessage());
+        }
+
+        List<float[]> targetEmbeddings;
+        try {
+            targetEmbeddings = embeddingClient.embed(targetChunks.stream()
+                    .map(chunk -> abbreviate(chunk.getChunkText(), 1000))
+                    .toList());
+        } catch (Exception ex) {
+            throw new BusinessException("TEMP_BASIS_QUERY_EMBEDDING_FAILED", ex.getMessage());
+        }
 
         int referencesUsed = 0;
         int matchedTargetCount = 0;
         List<Long> unmatchedTargetChunkIds = new ArrayList<>();
         List<Map<String, Object>> usage = new ArrayList<>();
-        for (ContentChunk targetChunk : targetChunks) {
-            List<ScoredBasisChunk> selected = selectBasisChunks(targetChunk, basisChunks);
-            if (selected.stream().anyMatch(item -> item.score() > 0)) {
+        for (int i = 0; i < targetChunks.size(); i++) {
+            ContentChunk targetChunk = targetChunks.get(i);
+            List<BasisVectorHit> hits;
+            long started = System.currentTimeMillis();
+            try {
+                hits = vectorRepository.search(namespace, targetEmbeddings.get(i), topK, maxChunkChars);
+            } catch (Exception ex) {
+                throw new BusinessException("TEMP_BASIS_VECTOR_SEARCH_FAILED", ex.getMessage());
+            }
+            if (!hits.isEmpty()) {
                 matchedTargetCount++;
             } else {
                 unmatchedTargetChunkIds.add(targetChunk.getSourceChunkId());
             }
 
-            List<RetrievalReference> references = toReferences(targetChunk, selected);
+            List<RetrievalReference> references = toReferences(targetChunk, hits);
             referencesUsed += references.size();
 
             RetrievalRequest request = new RetrievalRequest();
@@ -89,8 +130,8 @@ public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
             request.setTaskNo(context.getTask().getTaskNo());
             request.setSourceChunkId(targetChunk.getSourceChunkId());
             request.setQuery(abbreviate(targetChunk.getChunkText(), 1000));
-            request.setKnowledgeScope(Map.of("source", "uploaded_basis_files"));
-            request.setRetrievalConfig(Map.of("strategy", "uploaded_basis_local_match", "top_k", MAX_BASIS_CHUNKS_PER_TARGET));
+            request.setKnowledgeScope(Map.of("source", "uploaded_basis_files", "namespace", namespace));
+            request.setRetrievalConfig(Map.of("strategy", "uploaded_basis_temp_vector", "top_k", topK));
 
             Long retrievalId = retrievalRepository.insertRecord(
                     context.getTask(),
@@ -101,7 +142,7 @@ public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
                     "SUCCESS",
                     "",
                     "",
-                    0);
+                    System.currentTimeMillis() - started);
             retrievalRepository.insertReferences(retrievalId, context.getTask(), targetChunk.getSourceChunkId(), references);
 
             Map<String, Object> item = new LinkedHashMap<>();
@@ -109,14 +150,16 @@ public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
             item.put("source_chunk_no", targetChunk.getChunkNo());
             item.put("reference_count", references.size());
             item.put("basis_reference_count", references.size());
-            item.put("matched", selected.stream().anyMatch(score -> score.score() > 0));
+            item.put("matched", !references.isEmpty());
             usage.add(item);
         }
 
         Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("basis_selection_strategy", "uploaded_basis_local_match");
+        summary.put("basis_selection_strategy", "uploaded_basis_temp_vector");
+        summary.put("basis_vector_namespace", namespace);
+        summary.put("embedding_model", embeddingClient.model());
         summary.put("basis_file_count", basisDocuments.size());
-        summary.put("basis_chunk_count", basisChunks.size());
+        summary.put("basis_chunk_count", basisChunkCount);
         summary.put("target_chunk_count", targetChunks.size());
         summary.put("matched_target_chunk_count", matchedTargetCount);
         summary.put("unmatched_target_chunk_ids", unmatchedTargetChunkIds);
@@ -142,97 +185,73 @@ public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
         return result;
     }
 
-    private List<BasisChunk> splitBasisDocuments(List<ParsedDocument> documents) {
-        List<BasisChunk> result = new ArrayList<>();
+    private boolean hasKnowledgeScope(WorkflowTaskContext context) {
+        Object value = context.getInput().get("knowledge_scope");
+        return value instanceof Map<?, ?> map && !map.isEmpty();
+    }
+
+    private List<BasisDocument> splitBasisDocuments(List<ParsedDocument> documents) {
+        List<BasisDocument> result = new ArrayList<>();
         int fileIndex = 1;
         for (ParsedDocument document : documents) {
             String fileId = firstNotBlank(document.getMetadata().get("basis_file_id"), "BASIS-" + fileIndex);
             String fileName = firstNotBlank(document.getMetadata().get("basis_file_name"), document.getFileName());
             String fileUrl = firstNotBlank(document.getMetadata().get("basis_file_url"), "");
             List<ContentChunk> chunks = textChunkService.split(document);
-            for (ContentChunk chunk : chunks) {
-                String basisChunkId = fileId + "-" + chunk.getChunkNo();
-                result.add(new BasisChunk(basisChunkId, fileId, fileName, fileUrl, chunk));
-            }
+            result.add(new BasisDocument(fileId, fileName, fileUrl, firstNotBlank(document.getFileHash(), document.getTextHash()), chunks));
             fileIndex++;
         }
         return result;
     }
 
-    private List<ScoredBasisChunk> selectBasisChunks(ContentChunk targetChunk, List<BasisChunk> basisChunks) {
-        Set<String> targetTerms = terms(targetChunk.getChunkText());
-        List<ScoredBasisChunk> scored = new ArrayList<>();
-        for (BasisChunk basisChunk : basisChunks) {
-            double score = score(targetTerms, terms(basisChunk.chunk().getChunkText()));
-            scored.add(new ScoredBasisChunk(basisChunk, score));
+    private void indexBasisDocuments(WorkflowTaskContext context, String namespace, List<BasisDocument> documents) {
+        for (BasisDocument document : documents) {
+            List<String> texts = document.chunks().stream()
+                    .map(chunk -> value(chunk.getChunkText()))
+                    .toList();
+            List<float[]> embeddings = embeddingClient.embed(texts);
+            Long documentId = vectorRepository.insertDocument(context.getTask(), namespace, document,
+                    embeddingClient.model(), embeddingClient.dimensions());
+            List<BasisVectorChunk> chunks = new ArrayList<>();
+            for (int i = 0; i < document.chunks().size(); i++) {
+                ContentChunk chunk = document.chunks().get(i);
+                String basisChunkId = "WB-" + documentId + "-" + chunk.getChunkNo();
+                Map<String, Object> metadata = TemporaryBasisVectorRepository.metadata(
+                        context.getTask().getTaskId(),
+                        context.getTask().getTaskNo(),
+                        document.fileId(),
+                        document.fileName(),
+                        document.fileUrl());
+                metadata.put("basis_chunk_id", basisChunkId);
+                chunks.add(new BasisVectorChunk(documentId, basisChunkId, chunk, embeddings.get(i), metadata));
+            }
+            vectorRepository.insertChunks(chunks);
         }
-        scored.sort(Comparator.comparingDouble(ScoredBasisChunk::score).reversed());
-        return scored.subList(0, Math.min(MAX_BASIS_CHUNKS_PER_TARGET, scored.size()));
     }
 
-    private List<RetrievalReference> toReferences(ContentChunk targetChunk, List<ScoredBasisChunk> selected) {
+    private List<RetrievalReference> toReferences(ContentChunk targetChunk, List<BasisVectorHit> hits) {
         List<RetrievalReference> references = new ArrayList<>();
-        for (ScoredBasisChunk scored : selected) {
-            BasisChunk basisChunk = scored.basisChunk();
-            ContentChunk chunk = basisChunk.chunk();
+        for (BasisVectorHit hit : hits) {
             RetrievalReference reference = new RetrievalReference();
             reference.setSourceChunkId(targetChunk.getSourceChunkId());
-            reference.setKbChunkId(basisChunk.basisChunkId());
-            reference.setKbDocumentId(basisChunk.fileId());
+            reference.setKbChunkId(hit.chunkUid());
+            reference.setKbDocumentId(String.valueOf(hit.documentId()));
+            reference.setResourceId(hit.resourceId());
             reference.setResourceType("uploaded_basis_file");
-            reference.setFileName(basisChunk.fileName());
-            reference.setFileUrl(basisChunk.fileUrl());
-            reference.setVersionNo("uploaded");
-            reference.setPageNo(chunk.getPageNo());
-            reference.setSectionTitle(chunk.getSectionTitle());
-            reference.setSectionPath(chunk.getSectionPath());
+            reference.setFileName(hit.fileName());
+            reference.setFileUrl(hit.fileUrl());
+            reference.setVersionNo(hit.versionNo());
+            reference.setPageNo(hit.pageNo());
+            reference.setSectionTitle(hit.sectionTitle());
+            reference.setSectionPath(hit.sectionPath());
             reference.setRuleCode("");
-            reference.setChunkTextSnapshot(chunk.getChunkText());
-            reference.setScore(BigDecimal.valueOf(scored.score()));
-            reference.setRankScore(BigDecimal.valueOf(scored.score()));
+            reference.setChunkTextSnapshot(hit.chunkText());
+            reference.setScore(hit.score());
+            reference.setRankScore(hit.score());
             reference.setStatus("ACTIVE");
             references.add(reference);
         }
         return references;
-    }
-
-    private double score(Set<String> targetTerms, Set<String> basisTerms) {
-        if (targetTerms.isEmpty() || basisTerms.isEmpty()) {
-            return 0;
-        }
-        int hit = 0;
-        for (String term : targetTerms) {
-            if (basisTerms.contains(term)) {
-                hit++;
-            }
-        }
-        return (double) hit / Math.max(1, targetTerms.size());
-    }
-
-    private Set<String> terms(String text) {
-        Set<String> terms = new HashSet<>();
-        String normalized = text == null ? "" : text.toLowerCase();
-        for (String token : normalized.split("[^\\p{IsHan}a-z0-9./-]+")) {
-            if (token.length() >= 2) {
-                terms.add(token);
-                if (containsHan(token)) {
-                    for (int i = 0; i < token.length() - 1; i++) {
-                        terms.add(token.substring(i, i + 2));
-                    }
-                }
-            }
-        }
-        return terms;
-    }
-
-    private boolean containsHan(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            Character.UnicodeScript script = Character.UnicodeScript.of(value.charAt(i));
-            if (script == Character.UnicodeScript.HAN) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private String firstNotBlank(Object... values) {
@@ -253,9 +272,7 @@ public class UploadedBasisMatchNodeExecutor implements WorkflowNodeExecutor {
         return text.substring(0, maxLength);
     }
 
-    private record BasisChunk(String basisChunkId, String fileId, String fileName, String fileUrl, ContentChunk chunk) {
-    }
-
-    private record ScoredBasisChunk(BasisChunk basisChunk, double score) {
+    private String value(String value) {
+        return value == null ? "" : value;
     }
 }

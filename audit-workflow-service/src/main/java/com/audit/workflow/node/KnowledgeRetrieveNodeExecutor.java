@@ -69,7 +69,16 @@ public class KnowledgeRetrieveNodeExecutor implements WorkflowNodeExecutor {
             scope.put("knowledge_base_codes", binding.get("knowledge_base_codes"));
         }
         if (scope.isEmpty()) {
-            throw new BusinessException("KB_SCOPE_REQUIRED", "knowledge_scope is required");
+            if (Boolean.TRUE.equals(binding.get("required"))) {
+                throw new BusinessException("KB_SCOPE_REQUIRED", "knowledge_scope is required");
+            }
+            Map<String, Object> output = new LinkedHashMap<>();
+            output.put("retrieval_status", "SKIPPED");
+            output.put("skip_reason", "knowledge_scope_empty");
+            output.put("source_chunk_count", chunks.size());
+            output.put("retrieval_count", 0);
+            output.put("reference_count", 0);
+            return NodeExecutionResult.success(output);
         }
         Map<String, Object> retrievalConfig = mergeMaps(jsonSupport.toMap(workflow.getRetrievalConfig()), mapValue(binding.get("retrieval_config")));
         retrievalConfig = mergeMaps(retrievalConfig, mapValue(context.getInput().get("retrieval_config")));

@@ -1,12 +1,15 @@
 package com.ruoyi.system.service.audit;
 
 import java.util.List;
+import com.ruoyi.system.domain.audit.AuditReviewStats;
 import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
 
 public interface IAuditReviewService
 {
     List<AuditReviewTask> selectAuditReviewTaskList(AuditReviewTask task);
+
+    AuditReviewStats selectAuditReviewStats();
 
     AuditReviewTask selectAuditReviewTaskDetail(Long taskId, Long versionId);
 

@@ -4,17 +4,24 @@ import com.ruoyi.system.domain.audit.AuditAiFinding;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.domain.audit.FastGptAuditFinding;
 import com.ruoyi.system.domain.audit.FastGptAuditResult;
+import com.ruoyi.system.domain.audit.workflow.AuditWorkflowCallbackEvent;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
+import com.ruoyi.system.mapper.audit.AuditWorkflowCallbackEventMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisPersistenceService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
 import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 /**
  * AI 审核分析结果持久化服务实现
@@ -30,12 +37,15 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
     private static final int MAX_QUOTE_TEXT_LENGTH = 1000;
 
     private final AuditAiMapper auditAiMapper;
+    private final AuditWorkflowCallbackEventMapper callbackEventMapper;
     private final AuditAiQueuePositionService auditAiQueuePositionService;
 
     public AuditAiAnalysisPersistenceServiceImpl(AuditAiMapper auditAiMapper,
+                                                 AuditWorkflowCallbackEventMapper callbackEventMapper,
                                                  AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.auditAiMapper = auditAiMapper;
+        this.callbackEventMapper = callbackEventMapper;
         this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
 
@@ -54,6 +64,20 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
     public void saveAuditResult(AuditAiTask task, FastGptAuditResult result, String operator, boolean increaseAnalysisCount)
     {
         Long aiTaskId = task.getAiTaskId();
+        String runKey = analysisRunKey(result);
+        boolean hasRunKey = isNotBlank(runKey);
+        boolean shouldIncreaseAnalysisCount = increaseAnalysisCount;
+        if (increaseAnalysisCount && hasRunKey)
+        {
+            shouldIncreaseAnalysisCount = acquireAnalysisCountMarker(task, result, runKey, operator);
+            if (!shouldIncreaseAnalysisCount)
+            {
+                log.info("Analysis result already processed, skip final result persistence, aiTaskId={}, runKey={}",
+                        aiTaskId, runKey);
+                return;
+            }
+        }
+
         List<FastGptAuditFinding> findings = result.getFindings() == null
                 ? Collections.emptyList()
                 : result.getFindings();
@@ -108,7 +132,7 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         update.setAiSummary(summary);
         update.setUpdateBy(operator);
 
-        if (increaseAnalysisCount)
+        if (shouldIncreaseAnalysisCount)
         {
             auditAiMapper.updateAuditAiAnalysisResult(update);
         }
@@ -118,6 +142,75 @@ public class AuditAiAnalysisPersistenceServiceImpl implements AuditAiAnalysisPer
         }
         auditAiQueuePositionService.resortQueuePositions(operator);
         log.info("Task status updated to completed, aiTaskId={}", aiTaskId);
+    }
+
+    private boolean acquireAnalysisCountMarker(AuditAiTask task, FastGptAuditResult result, String runKey,
+            String operator)
+    {
+        AuditWorkflowCallbackEvent marker = new AuditWorkflowCallbackEvent();
+        marker.setCallbackEventId(buildAnalysisResultMarkerId(task.getAiTaskId(), runKey));
+        marker.setAiTaskId(task.getAiTaskId());
+        marker.setWorkflowTaskId(defaultIfBlank(result.getWorkflowTaskId(), result.getWorkflowRunId()));
+        marker.setEventStatus("processed");
+        marker.setRawPayload("analysis-result-count-marker, runKey=" + runKey + ", operator=" + operator);
+
+        try
+        {
+            callbackEventMapper.insertAuditWorkflowCallbackEvent(marker);
+            return true;
+        }
+        catch (DuplicateKeyException e)
+        {
+            log.info("Analysis result count marker already exists, skip increment, aiTaskId={}, runKey={}",
+                    task.getAiTaskId(), runKey);
+            return false;
+        }
+    }
+
+    private String analysisRunKey(FastGptAuditResult result)
+    {
+        if (result == null)
+        {
+            return "";
+        }
+        if (isNotBlank(result.getWorkflowTaskId()))
+        {
+            return result.getWorkflowTaskId().trim();
+        }
+        if (isNotBlank(result.getWorkflowRunId()))
+        {
+            return result.getWorkflowRunId().trim();
+        }
+        return "";
+    }
+
+    private String buildAnalysisResultMarkerId(Long aiTaskId, String runKey)
+    {
+        String markerId = "analysis-result-" + aiTaskId + "-" + runKey;
+        if (markerId.length() <= 100)
+        {
+            return markerId;
+        }
+        return "analysis-result-" + aiTaskId + "-" + sha256Hex(runKey).substring(0, 32);
+    }
+
+    private String sha256Hex(String value)
+    {
+        try
+        {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte item : hash)
+            {
+                hex.append(String.format("%02x", item));
+            }
+            return hex.toString();
+        }
+        catch (NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException("SHA-256 algorithm is unavailable", e);
+        }
     }
 
     /**

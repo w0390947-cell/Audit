@@ -109,6 +109,7 @@
             v-hasPermi="['audit:review:detail']"
           >详情</el-button>
           <el-button
+            v-if="canEditReview(scope.row)"
             size="mini"
             type="text"
             @click="handleUpdate(scope.row)"
@@ -182,6 +183,7 @@
               :dropzone="true"
               button-text="上传文件"
               drop-hint="拖放文件"
+              @upload-success="handleMainUploadSuccess"
             />
           </div>
         </el-form-item>
@@ -321,6 +323,15 @@
             <el-table-column label="文件大小" prop="fileSize" width="90" align="center">
               <template slot-scope="scope">{{ scope.row.fileSize || '--' }}</template>
             </el-table-column>
+            <el-table-column label="向量化状态" width="110" align="center">
+              <template slot-scope="scope">
+                <el-tag
+                  size="mini"
+                  :type="scope.row.storageStatus === 'stored' ? 'success' : 'info'"
+                  disable-transitions
+                >{{ libraryVectorStatusLabel(scope.row) }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="创建者" prop="creatorName" width="100" align="center">
               <template slot-scope="scope">{{ scope.row.creatorName || '--' }}</template>
             </el-table-column>
@@ -351,7 +362,7 @@
 <script>
 import FileUpload from '@/components/FileUpload'
 import { ensureAiTaskByReviewTask } from '@/api/audit/ai'
-import { listCommonResource, listLibraryFolders, listTaskResource } from '@/api/audit/library'
+import { listCommonResource, listLibraryFolders } from '@/api/audit/library'
 import {
   addReview,
   delReview,
@@ -465,8 +476,10 @@ export default {
         handlerName: undefined,
         priority: 'medium',
         mainReportUrls: '',
+        mainUploadedFiles: [],
         basisFileUrls: '',
         basisUploadedFiles: [],
+        basisFileList: [],
         appendixFileUrls: '',
         reviewStatus: 'reviewing',
         taskStatus: 'uploaded',
@@ -506,8 +519,10 @@ export default {
           handlerName: data.handlerName,
           priority: data.priority || 'medium',
           mainReportUrls: data.mainReportUrls || '',
+          mainUploadedFiles: [],
           basisFileUrls: data.basisFileUrls || '',
           basisUploadedFiles: [],
+          basisFileList: data.basisFileList || [],
           appendixFileUrls: data.appendixFileUrls || '',
           reviewStatus: data.reviewStatus,
           taskStatus: data.taskStatus,
@@ -518,17 +533,89 @@ export default {
         this.open = true
       })
     },
+    isCommonSubmitterOnly() {
+      return this.$auth.hasRole('common')
+        && !this.$auth.hasRole('admin')
+        && !this.$auth.hasRole('system_admin')
+        && !this.$auth.hasRole('auditor')
+    },
+    canEditReview(row) {
+      if (!this.isCommonSubmitterOnly()) {
+        return true
+      }
+      return row && row.reviewStatus === 'returned'
+    },
     submitForm() {
       this.$refs.form.validate(valid => {
         if (!valid) {
           return
         }
-        const request = this.form.taskId ? updateReview(this.form) : addReview(this.form)
+        const submitData = this.buildSubmitData()
+        const request = submitData.taskId ? updateReview(submitData) : addReview(submitData)
         request.then(() => {
-          this.$modal.msgSuccess(this.form.taskId ? '修改成功' : '新增成功')
+          this.$modal.msgSuccess(submitData.taskId ? '修改成功' : '新增成功')
           this.open = false
           this.getList()
         })
+      })
+    },
+    buildSubmitData() {
+      return {
+        ...this.form,
+        basisFileList: this.normalizedBasisFileList()
+      }
+    },
+    normalizedBasisFileList() {
+      const detailMap = {}
+      ;(this.form.basisFileList || []).forEach(item => {
+        if (item && item.fileUrl) {
+          detailMap[item.fileUrl] = item
+        }
+      })
+      ;(this.form.basisUploadedFiles || []).forEach(item => {
+        if (item && item.fileUrl && !detailMap[item.fileUrl]) {
+          detailMap[item.fileUrl] = {
+            sourceType: 'uploaded',
+            fileUrl: item.fileUrl,
+            fileName: item.fileName,
+            originalFilename: item.originalFilename,
+            fileSize: item.fileSize
+          }
+        }
+      })
+      return this.splitFileUrls(this.form.basisFileUrls).map((fileUrl, index) => {
+        const item = detailMap[fileUrl] || {}
+        return {
+          sourceType: item.sourceType || 'uploaded',
+          libraryResourceId: item.libraryResourceId,
+          fileUrl,
+          fileName: item.fileName || this.getFileNameFromUrl(fileUrl),
+          originalFilename: item.originalFilename || item.fileName || this.getFileNameFromUrl(fileUrl),
+          fileSize: item.fileSize || '',
+          sortNum: index + 1
+        }
+      })
+    },
+    handleMainUploadSuccess(payload) {
+      if (!payload || !payload.response) {
+        return
+      }
+      const response = payload.response
+      const fileUrl = response.fileName || ''
+      if (!fileUrl) {
+        return
+      }
+      if (!Array.isArray(this.form.mainUploadedFiles)) {
+        this.$set(this.form, 'mainUploadedFiles', [])
+      }
+      if (this.form.mainUploadedFiles.some(item => item.fileUrl === fileUrl)) {
+        return
+      }
+      this.form.mainUploadedFiles.push({
+        fileUrl,
+        fileName: response.newFileName || this.getFileNameFromUrl(fileUrl),
+        originalFilename: response.originalFilename || payload.file?.name || this.getFileNameFromUrl(fileUrl),
+        fileSize: payload.fileSize || ''
       })
     },
     handleBasisUploadSuccess(payload) {
@@ -546,11 +633,16 @@ export default {
       if (this.form.basisUploadedFiles.some(item => item.fileUrl === fileUrl)) {
         return
       }
-      this.form.basisUploadedFiles.push({
+      const uploadedFile = {
         fileUrl,
         fileName: response.newFileName || this.getFileNameFromUrl(fileUrl),
         originalFilename: response.originalFilename || payload.file?.name || this.getFileNameFromUrl(fileUrl),
         fileSize: payload.fileSize || ''
+      }
+      this.form.basisUploadedFiles.push(uploadedFile)
+      this.upsertBasisFileDetail({
+        sourceType: 'uploaded',
+        ...uploadedFile
       })
     },
     handleDetail(row) {
@@ -664,10 +756,7 @@ export default {
         queryParams.folderId = 0
       }
       this.resourceLoading = true
-      Promise.all([
-        listCommonResource(queryParams),
-        listTaskResource(queryParams)
-      ]).then(([commonResponse, taskResponse]) => {
+      listCommonResource(queryParams).then(commonResponse => {
         const commonRows = (commonResponse.rows || []).map(item => ({
           pickerKey: 'common_' + item.resourceId,
           resourceType: 'common',
@@ -677,22 +766,11 @@ export default {
           folderName: item.folderName,
           fileUrl: item.fileUrl,
           fileSize: item.fileSize,
+          storageStatus: item.storageStatus,
           creatorName: item.creator || item.createBy,
           displayTime: item.latestModifyTime || item.updateTime || item.createTime
         }))
-        const taskRows = (taskResponse.rows || []).map(item => ({
-          pickerKey: 'task_' + item.resourceId,
-          resourceType: 'task',
-          resourceId: item.resourceId,
-          displayName: item.fileName || this.getFileNameFromUrl(item.previewFileUrl),
-          fileName: item.fileName || this.getFileNameFromUrl(item.previewFileUrl),
-          folderName: item.folderName,
-          fileUrl: item.previewFileUrl,
-          fileSize: '',
-          creatorName: item.creator || item.createBy,
-          displayTime: item.archiveTime || item.updateTime || item.createTime
-        }))
-        this.libraryResources = commonRows.concat(taskRows)
+        this.libraryResources = commonRows
         this.libraryGlobalLoaded = !(folder && folder.folderId)
         this.resourceLoading = false
         this.$nextTick(this.syncLibraryTableSelection)
@@ -703,7 +781,10 @@ export default {
       })
     },
     handleLibrarySelect(selection, row) {
-      if (!row || !row.fileUrl) {
+      if (!this.isLibraryFileSelectable(row)) {
+        if (row && row.pickerKey) {
+          this.$delete(this.selectedLibraryFiles, row.pickerKey)
+        }
         return
       }
       if (selection.some(item => item.pickerKey === row.pickerKey)) {
@@ -715,7 +796,8 @@ export default {
     handleLibrarySelectAll(selection) {
       const selectionKeys = selection.map(item => item.pickerKey)
       this.filteredLibraryResources.forEach(row => {
-        if (!row.fileUrl) {
+        if (!this.isLibraryFileSelectable(row)) {
+          this.$delete(this.selectedLibraryFiles, row.pickerKey)
           return
         }
         if (selectionKeys.includes(row.pickerKey)) {
@@ -731,18 +813,25 @@ export default {
       }
       this.$refs.libraryResourceTable.clearSelection()
       this.filteredLibraryResources.forEach(row => {
+        if (!this.isLibraryFileSelectable(row)) {
+          this.$delete(this.selectedLibraryFiles, row.pickerKey)
+          return
+        }
         if (this.selectedLibraryFiles[row.pickerKey]) {
           this.$refs.libraryResourceTable.toggleRowSelection(row, true)
         }
       })
     },
     isLibraryFileSelectable(row) {
-      return !!(row && row.fileUrl)
+      return !!(row && row.fileUrl && row.resourceType === 'common' && row.storageStatus === 'stored')
     },
     confirmLibrarySelection() {
-      const selectedUrls = this.selectedLibraryFileList.map(item => item.fileUrl).filter(Boolean)
+      const selectedUrls = this.selectedLibraryFileList
+        .filter(item => this.isLibraryFileSelectable(item))
+        .map(item => item.fileUrl)
+        .filter(Boolean)
       if (!selectedUrls.length) {
-        this.$message.warning('请选择文件')
+        this.$message.warning('请选择已向量化的文件')
         return
       }
       const currentUrls = this.splitFileUrls(this.form.basisFileUrls)
@@ -752,7 +841,36 @@ export default {
         return
       }
       this.form.basisFileUrls = mergedUrls.join(',')
+      this.selectedLibraryFileList
+        .filter(item => this.isLibraryFileSelectable(item))
+        .forEach(item => {
+          this.upsertBasisFileDetail({
+            sourceType: 'library',
+            libraryResourceId: item.resourceId,
+            fileUrl: item.fileUrl,
+            fileName: item.fileName || item.displayName || this.getFileNameFromUrl(item.fileUrl),
+            originalFilename: item.displayName || item.fileName || this.getFileNameFromUrl(item.fileUrl),
+            fileSize: item.fileSize || ''
+          })
+        })
       this.libraryOpen = false
+    },
+    upsertBasisFileDetail(detail) {
+      if (!detail || !detail.fileUrl) {
+        return
+      }
+      if (!Array.isArray(this.form.basisFileList)) {
+        this.$set(this.form, 'basisFileList', [])
+      }
+      const index = this.form.basisFileList.findIndex(item => item.fileUrl === detail.fileUrl)
+      if (index > -1) {
+        this.$set(this.form.basisFileList, index, {
+          ...this.form.basisFileList[index],
+          ...detail
+        })
+      } else {
+        this.form.basisFileList.push(detail)
+      }
     },
     splitFileUrls(fileUrls) {
       if (!fileUrls) {
@@ -769,12 +887,33 @@ export default {
     },
     commonStatusLabel(status) {
       if (status === 'stored') {
-        return '已入库'
+        return '已向量化'
+      }
+      if (status === 'reviewing') {
+        return '待审核'
+      }
+      if (status === 'pending') {
+        return '等待向量化'
+      }
+      if (status === 'parsing') {
+        return '解析中'
+      }
+      if (status === 'embedding') {
+        return '向量生成中'
       }
       if (status === 'failed') {
-        return '入库失败'
+        return '向量化失败'
       }
-      return '入库中'
+      if (status === 'text_empty') {
+        return '未识别文本'
+      }
+      return status || '未向量化'
+    },
+    libraryVectorStatusLabel(row) {
+      if (!row || row.resourceType !== 'common') {
+        return '未向量化'
+      }
+      return this.commonStatusLabel(row.storageStatus)
     },
     taskStatusLabel(status) {
       if (status === 'archived') {

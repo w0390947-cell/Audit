@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS `audit_asset_record`;
 CREATE TABLE `audit_asset_record` (
   `asset_id` bigint NOT NULL AUTO_INCREMENT COMMENT '资产主键',
   `review_task_id` bigint DEFAULT NULL COMMENT '审核任务主键',
+  `library_resource_id` bigint DEFAULT NULL COMMENT '审核文件库资源主键',
   `task_no` varchar(64) NOT NULL COMMENT '任务编号',
   `product_name` varchar(100) NOT NULL COMMENT '产品名称',
   `delivery_unit` varchar(100) DEFAULT '' COMMENT '送检单位',
@@ -36,7 +37,8 @@ CREATE TABLE `audit_asset_record` (
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`asset_id`),
-  KEY `idx_audit_asset_task_no` (`task_no`)
+  KEY `idx_audit_asset_task_no` (`task_no`),
+  KEY `idx_audit_asset_library_resource` (`library_resource_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核资产记录表';
 
 CREATE TABLE `audit_asset_ai_version` (
@@ -213,17 +215,18 @@ INSERT INTO `sys_dict_type` (`dict_id`, `dict_name`, `dict_type`, `status`, `cre
 
 INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value`, `dict_type`, `list_class`, `is_default`, `status`, `create_by`, `create_time`) VALUES
 (2404, 1, '等待向量化', 'pending', 'audit_file_storage_status', 'info', 'Y', '0', 'admin', NOW()),
-(2405, 2, '解析中', 'parsing', 'audit_file_storage_status', 'primary', 'N', '0', 'admin', NOW()),
-(2406, 3, '向量生成中', 'embedding', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
-(2402, 4, '已向量化', 'stored', 'audit_file_storage_status', 'success', 'N', '0', 'admin', NOW()),
-(2407, 5, '未识别文本', 'text_empty', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
-(2403, 6, '向量化失败', 'failed', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
+(2408, 2, '待审核', 'reviewing', 'audit_file_storage_status', 'primary', 'N', '0', 'admin', NOW()),
+(2405, 3, '解析中', 'parsing', 'audit_file_storage_status', 'primary', 'N', '0', 'admin', NOW()),
+(2406, 4, '向量生成中', 'embedding', 'audit_file_storage_status', 'warning', 'N', '0', 'admin', NOW()),
+(2402, 5, '已向量化', 'stored', 'audit_file_storage_status', 'success', 'N', '0', 'admin', NOW()),
+(2407, 6, '未识别文本', 'text_empty', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
+(2403, 7, '向量化失败', 'failed', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
 (2411, 1, '归集处理中', 'processing', 'audit_task_collect_status', 'primary', 'N', '0', 'admin', NOW()),
 (2412, 2, '已归集', 'archived', 'audit_task_collect_status', 'success', 'Y', '0', 'admin', NOW()),
 (2413, 3, '归集失败', 'failed', 'audit_task_collect_status', 'danger', 'N', '0', 'admin', NOW());
 
-DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2021 AND 2048;
-DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2021 AND 2048;
+DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2021 AND 2050;
+DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2021 AND 2050;
 
 INSERT INTO `sys_menu` (`menu_id`, `menu_name`, `parent_id`, `order_num`, `path`, `component`, `route_name`, `is_frame`, `is_cache`, `menu_type`, `visible`, `status`, `perms`, `icon`, `create_by`, `create_time`, `remark`) VALUES
 (2021, '审核资产库', 0, 10, 'audit-asset', 'Layout', 'AuditAssetRoot', 1, 0, 'M', '0', '0', '', 'audit-asset-root', 'admin', NOW(), '审核资产业务'),
@@ -236,6 +239,7 @@ INSERT INTO `sys_menu` (`menu_id`, `menu_name`, `parent_id`, `order_num`, `path`
 (2028, '审核资源批量下载', 2022, 6, '#', '', '', 1, 0, 'F', '0', '0', 'audit:asset:batchDownload', '#', 'admin', NOW(), ''),
 (2029, '审核资源一键打包', 2022, 7, '#', '', '', 1, 0, 'F', '0', '0', 'audit:asset:batchPackage', '#', 'admin', NOW(), ''),
 (2030, '审核资源重新上传', 2022, 8, '#', '', '', 1, 0, 'F', '0', '0', 'audit:asset:reupload', '#', 'admin', NOW(), ''),
+(2050, '审核资源审核', 2022, 9, '#', '', '', 1, 0, 'F', '0', '0', 'audit:asset:review', '#', 'admin', NOW(), ''),
 (2031, '审核资源库', 0, 11, 'audit-library', 'Layout', 'AuditLibraryRoot', 1, 0, 'M', '0', '0', '', 'audit-library-root', 'admin', NOW(), '审核资源库'),
 (2032, '审核文件库', 2031, 1, 'folder', 'audit/library/folder', 'AuditLibraryFolder', 1, 0, 'C', '0', '0', 'audit:library:folder:list', 'tree', 'admin', NOW(), '审核文件库'),
 (2033, '审核文件库查询', 2032, 1, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:query', '#', 'admin', NOW(), ''),
@@ -259,7 +263,7 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`)
 SELECT 1, t.menu_id FROM (
   SELECT 2021 AS menu_id UNION ALL SELECT 2022 UNION ALL SELECT 2023 UNION ALL SELECT 2024 UNION ALL
   SELECT 2025 UNION ALL SELECT 2026 UNION ALL SELECT 2027 UNION ALL SELECT 2028 UNION ALL
-  SELECT 2029 UNION ALL SELECT 2030 UNION ALL SELECT 2031 UNION ALL SELECT 2032 UNION ALL
+  SELECT 2029 UNION ALL SELECT 2030 UNION ALL SELECT 2050 UNION ALL SELECT 2031 UNION ALL SELECT 2032 UNION ALL
   SELECT 2033 UNION ALL SELECT 2034 UNION ALL SELECT 2035 UNION ALL SELECT 2036 UNION ALL
   SELECT 2037 UNION ALL SELECT 2038 UNION ALL SELECT 2039 UNION ALL SELECT 2040 UNION ALL
   SELECT 2041 UNION ALL SELECT 2042 UNION ALL SELECT 2043 UNION ALL SELECT 2044 UNION ALL
@@ -273,7 +277,7 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`)
 SELECT 2, t.menu_id FROM (
   SELECT 2021 AS menu_id UNION ALL SELECT 2022 UNION ALL SELECT 2023 UNION ALL SELECT 2024 UNION ALL
   SELECT 2025 UNION ALL SELECT 2026 UNION ALL SELECT 2027 UNION ALL SELECT 2028 UNION ALL
-  SELECT 2029 UNION ALL SELECT 2030 UNION ALL SELECT 2031 UNION ALL SELECT 2032 UNION ALL
+  SELECT 2029 UNION ALL SELECT 2030 UNION ALL SELECT 2050 UNION ALL SELECT 2031 UNION ALL SELECT 2032 UNION ALL
   SELECT 2033 UNION ALL SELECT 2034 UNION ALL SELECT 2035 UNION ALL SELECT 2036 UNION ALL
   SELECT 2037 UNION ALL SELECT 2038 UNION ALL SELECT 2039 UNION ALL SELECT 2040 UNION ALL
   SELECT 2041 UNION ALL SELECT 2042 UNION ALL SELECT 2043 UNION ALL SELECT 2044 UNION ALL

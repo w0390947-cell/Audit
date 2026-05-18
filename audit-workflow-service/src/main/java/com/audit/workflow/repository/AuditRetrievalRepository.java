@@ -34,6 +34,15 @@ public class AuditRetrievalRepository {
         jdbcTemplate.update("DELETE FROM audit_retrieval_record WHERE task_id = ?", taskId);
     }
 
+    public void deleteUploadedBasisByTaskId(Long taskId) {
+        jdbcTemplate.update("DELETE FROM audit_retrieval_reference WHERE task_id = ? AND resource_type = ?",
+                taskId, "uploaded_basis_file");
+        jdbcTemplate.update("""
+                DELETE FROM audit_retrieval_record
+                WHERE task_id = ? AND knowledge_scope LIKE ?
+                """, taskId, "%uploaded_basis_files%");
+    }
+
     public Long insertRecord(AuditTask task,
                              RetrievalRequest request,
                              String requestPayload,

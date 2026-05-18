@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,6 +56,7 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
     private final int chunkModelTimeoutRetries;
     private final double chunkFailureFatalRatio;
     private final int aiAuditTimeoutSeconds;
+    private final int neighborContextChars;
 
     public AiAuditNodeExecutor(AuditTaskContentChunkRepository contentChunkRepository,
                                AuditRetrievalRepository retrievalRepository,
@@ -73,7 +75,8 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
                                @Value("${audit.audit.chunk-model-max-retries:2}") int chunkModelMaxRetries,
                                @Value("${audit.audit.chunk-model-timeout-retries:0}") int chunkModelTimeoutRetries,
                                @Value("${audit.audit.chunk-failure-fatal-ratio:0.2}") double chunkFailureFatalRatio,
-                               @Value("${audit.audit.ai-audit-timeout-seconds:840}") int aiAuditTimeoutSeconds) {
+                               @Value("${audit.audit.ai-audit-timeout-seconds:840}") int aiAuditTimeoutSeconds,
+                               @Value("${audit.audit.neighbor-context-chars:400}") int neighborContextChars) {
         this.contentChunkRepository = contentChunkRepository;
         this.retrievalRepository = retrievalRepository;
         this.workflowRepository = workflowRepository;
@@ -92,6 +95,7 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
         this.chunkModelTimeoutRetries = chunkModelTimeoutRetries;
         this.chunkFailureFatalRatio = chunkFailureFatalRatio;
         this.aiAuditTimeoutSeconds = aiAuditTimeoutSeconds;
+        this.neighborContextChars = Math.max(0, neighborContextChars);
     }
 
     @Override
@@ -101,57 +105,7 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
 
     @Override
     public NodeExecutionResult execute(WorkflowTaskContext context, AuditWorkflowNode node) {
-        if (isBusinessReportFindingsMode(node)) {
-            return executeBusinessReportAudit(context);
-        }
-        List<ContentChunk> chunks = contentChunkRepository.findByTaskId(context.getTask().getTaskId());
-        if (chunks.isEmpty()) {
-            throw new BusinessException("MODEL_RESPONSE_INVALID", "no source chunks for AI audit");
-        }
-        AuditWorkflow workflow = workflowRepository.findByCode(context.getTask().getWorkflowCode())
-                .orElseThrow(() -> new BusinessException("WORKFLOW_NOT_FOUND", "workflow not found"));
-
-        List<Map<String, Object>> chunkResults = new ArrayList<>();
-        int referenceCount = 0;
-        int referencesUsedInPrompt = 0;
-        int modelCallCount = 0;
-        for (ContentChunk chunk : chunks) {
-            List<RetrievalReference> references = retrievalRepository.findReferencesByTaskIdAndSourceChunkId(
-                    context.getTask().getTaskId(), chunk.getSourceChunkId());
-            referenceCount += references.size();
-            referencesUsedInPrompt += references.size();
-            String prompt = buildPrompt(workflow, chunk, references);
-
-            ModelRequest request = new ModelRequest();
-            request.setTaskId(context.getTask().getTaskId());
-            request.setTaskNo(context.getTask().getTaskNo());
-            request.setWorkflowCode(context.getTask().getWorkflowCode());
-            request.setSourceChunkId(chunk.getSourceChunkId());
-            request.setModelName(defaultModel);
-            request.setSystemPrompt("");
-            request.setUserPrompt(prompt);
-            ModelResponse response = modelGateway.chat(request);
-            modelCallCount++;
-            modelCallLogRepository.insertLog(context.getTask(), request, response);
-            if (!response.isSuccess()) {
-                throw new BusinessException(response.getErrorCode(), response.getErrorMsg());
-            }
-
-            Map<String, Object> result = parseModelJson(response.getContent());
-            result.put("source_chunk_id", chunk.getSourceChunkId());
-            chunkResults.add(result);
-        }
-
-        context.putVariable("chunk_audit_results", chunkResults);
-        Map<String, Object> output = new LinkedHashMap<>();
-        output.put("audit_status", "SUCCESS");
-        output.put("chunk_result_count", chunkResults.size());
-        output.put("reference_count", referenceCount);
-        output.put("references_used_in_prompt", referencesUsedInPrompt);
-        output.put("basis_chunks_used_in_prompt", referencesUsedInPrompt);
-        output.put("model_call_count", modelCallCount);
-        output.put("finding_count", countResultFindings(chunkResults));
-        return NodeExecutionResult.success(output);
+        return executeBusinessReportAudit(context);
     }
 
     private NodeExecutionResult executeBusinessReportAudit(WorkflowTaskContext context) {
@@ -230,14 +184,18 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
         }
 
         boolean uploadedBasisWorkflow = isUploadedBasisWorkflow(context);
-        String auditStrategy = uploadedBasisWorkflow ? "uploaded_basis_chunk_then_merge" : "chunk_then_merge";
+        boolean mixedBasisWorkflow = uploadedBasisWorkflow && hasKnowledgeScope(context);
+        String auditStrategy = mixedBasisWorkflow ? "mixed_uploaded_basis_and_library_chunk_then_merge"
+                : (uploadedBasisWorkflow ? "uploaded_basis_chunk_then_merge" : "chunk_then_merge");
+        Map<Long, NeighborPageContext> neighborContexts = buildNeighborPageContexts(chunks);
         int parallelism = Math.max(1, Math.min(chunkModelParallelism, chunks.size()));
         ExecutorService executorService = Executors.newFixedThreadPool(parallelism);
         List<Future<ChunkAuditOutput>> futures = new ArrayList<>();
         for (ContentChunk chunk : chunks) {
             sourceChunkIds.add(chunk.getSourceChunkId());
             List<RetrievalReference> chunkReferences = referencesByChunk.getOrDefault(chunk.getSourceChunkId(), List.of());
-            futures.add(executorService.submit(chunkAuditCallable(context, workflow, chunk, chunkReferences, uploadedBasisWorkflow)));
+            futures.add(executorService.submit(chunkAuditCallable(context, workflow, chunk, chunkReferences,
+                    uploadedBasisWorkflow, mixedBasisWorkflow, neighborContexts.get(chunk.getSourceChunkId()))));
         }
         try {
             for (Future<ChunkAuditOutput> future : futures) {
@@ -390,7 +348,9 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
                                                           AuditWorkflow workflow,
                                                           ContentChunk chunk,
                                                           List<RetrievalReference> references,
-                                                          boolean uploadedBasisWorkflow) {
+                                                          boolean uploadedBasisWorkflow,
+                                                          boolean mixedBasisWorkflow,
+                                                          NeighborPageContext neighborContext) {
         return () -> {
             List<RetrievalReference> selectedReferences = selectChunkReferences(references);
             Map<String, Object> referenceUsage = new LinkedHashMap<>();
@@ -417,7 +377,8 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
                 request.setSourceChunkId(chunk.getSourceChunkId());
                 request.setModelName(defaultModel);
                 request.setSystemPrompt("");
-                request.setUserPrompt(buildBusinessReportChunkPrompt(workflow, context, chunk, selectedReferences, uploadedBasisWorkflow));
+                request.setUserPrompt(buildBusinessReportChunkPrompt(workflow, context, chunk, selectedReferences,
+                        uploadedBasisWorkflow, mixedBasisWorkflow, neighborContext));
 
                 ModelResponse response = modelGateway.chat(request);
                 modelCallLogRepository.insertLog(context.getTask(), request, response);
@@ -504,21 +465,6 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
                 inputTokens, outputTokens, durationMs, false, List.of(), List.of(warning), referenceUsage);
     }
 
-    private String buildPrompt(AuditWorkflow workflow, ContentChunk chunk, List<RetrievalReference> references) {
-        StringBuilder builder = new StringBuilder();
-        builder.append(requirePromptTemplate(workflow)).append("\n\n");
-        builder.append("\n\n待审核内容元信息：\n");
-        builder.append("- source_chunk_id: ").append(chunk.getSourceChunkId()).append("\n");
-        builder.append("- chunk_no: ").append(chunk.getChunkNo()).append("\n");
-        builder.append("- page_no: ").append(chunk.getPageNo()).append("\n");
-        builder.append("- section_title: ").append(chunk.getSectionTitle()).append("\n\n");
-        builder.append("待审核内容：\n");
-        builder.append(chunk.getChunkText()).append("\n\n");
-        builder.append("检索依据：\n");
-        builder.append(formatReferences(references)).append("\n\n");
-        return builder.toString();
-    }
-
     private String buildBusinessReportPrompt(AuditWorkflow workflow, ParsedDocument document, List<RetrievalReference> references) {
         StringBuilder builder = new StringBuilder();
         builder.append(requirePromptTemplate(workflow)).append("\n\n");
@@ -538,6 +484,26 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
                                                   ContentChunk chunk,
                                                   List<RetrievalReference> references,
                                                   boolean uploadedBasisWorkflow) {
+        return buildBusinessReportChunkPrompt(workflow, context, chunk, references, uploadedBasisWorkflow, false);
+    }
+
+    private String buildBusinessReportChunkPrompt(AuditWorkflow workflow,
+                                                  WorkflowTaskContext context,
+                                                  ContentChunk chunk,
+                                                  List<RetrievalReference> references,
+                                                  boolean uploadedBasisWorkflow,
+                                                  boolean mixedBasisWorkflow) {
+        return buildBusinessReportChunkPrompt(workflow, context, chunk, references, uploadedBasisWorkflow,
+                mixedBasisWorkflow, null);
+    }
+
+    private String buildBusinessReportChunkPrompt(AuditWorkflow workflow,
+                                                  WorkflowTaskContext context,
+                                                  ContentChunk chunk,
+                                                  List<RetrievalReference> references,
+                                                  boolean uploadedBasisWorkflow,
+                                                  boolean mixedBasisWorkflow,
+                                                  NeighborPageContext neighborContext) {
         StringBuilder builder = new StringBuilder();
         builder.append(requirePromptTemplate(workflow)).append("\n\n");
         builder.append("【待审阅报告片段元信息】：\n");
@@ -550,11 +516,42 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
         }
         builder.append("- section_title: ").append(chunk.getSectionTitle()).append("\n");
         builder.append("- section_path: ").append(chunk.getSectionPath()).append("\n\n");
-        builder.append("【待审阅报告】：\n");
+        appendNeighborContextRules(builder, neighborContext);
+        if (neighborContext != null && !neighborContext.previousPageTail().isBlank()) {
+            builder.append("【上一页结尾，仅供连续性判断，禁止审计，禁止引用到输出结果】：\n");
+            builder.append("page_no: ").append(neighborContext.previousPageNo()).append("\n");
+            builder.append("以下内容不是审计对象，禁止作为异常依据，禁止作为报告原文引用：\n");
+            builder.append(neighborContext.previousPageTail()).append("\n\n");
+        }
+        builder.append("【待审阅报告，唯一审计对象】：\n");
         builder.append(chunk.getChunkText()).append("\n\n");
-        builder.append(uploadedBasisWorkflow ? "【本次上传依据文件匹配结果】：\n" : "【知识库搜索结果】：\n");
+        if (neighborContext != null && !neighborContext.nextPageHead().isBlank()) {
+            builder.append("【下一页开头，仅供连续性判断，禁止审计，禁止引用到输出结果】：\n");
+            builder.append("page_no: ").append(neighborContext.nextPageNo()).append("\n");
+            builder.append("以下内容不是审计对象，禁止作为异常依据，禁止作为报告原文引用：\n");
+            builder.append(neighborContext.nextPageHead()).append("\n\n");
+        }
+        if (mixedBasisWorkflow) {
+            builder.append("【本次上传依据文件匹配与已选知识库检索结果】：\n");
+        } else {
+            builder.append(uploadedBasisWorkflow ? "【本次上传依据文件匹配结果】：\n" : "【知识库搜索结果】：\n");
+        }
         builder.append(formatReferences(references, chunkMaxReferenceCount, chunkMaxReferenceChars)).append("\n");
         return builder.toString();
+    }
+
+    private void appendNeighborContextRules(StringBuilder builder, NeighborPageContext neighborContext) {
+        if (neighborContext == null || !neighborContext.hasContext()) {
+            return;
+        }
+        builder.append("【邻页边界上下文使用规则】：\n");
+        builder.append("- 本次审计的唯一对象是【待审阅报告，唯一审计对象】中的当前页内容。\n");
+        builder.append("- 【上一页结尾】和【下一页开头】仅用于判断当前页首尾是否存在跨页续写；它们不是审计对象，不能作为问题来源，不能作为异常依据，不能引用为报告原文引用。\n");
+        builder.append("- 如果当前页末尾的语句在【下一页开头】中继续完成，则不得判定为内容缺失、表述不完整、结论不完整或语句未完结。\n");
+        builder.append("- 如果当前页开头承接【上一页结尾】，可以结合上一页结尾理解当前页开头，但不得对上一页内容单独提出问题。\n");
+        builder.append("- 每一条异常的报告原文引用必须逐字来自【待审阅报告，唯一审计对象】当前页内容；如果引用内容只出现在【上一页结尾】或【下一页开头】中，必须丢弃该异常，不得输出。\n");
+        builder.append("- 输出中的 page_no 必须等于当前页元信息 page_no；但只有问题来源确实位于当前页时，才允许输出该 page_no，不得因为邻页上下文存在问题而使用当前 page_no 输出。\n");
+        builder.append("- 输出前逐条自检：异常是否针对当前页内容、报告原文引用是否出自当前页、是否错误使用邻页上下文作为问题来源；任一项不满足，则删除该异常。\n\n");
     }
 
     private String requirePromptTemplate(AuditWorkflow workflow) {
@@ -697,7 +694,89 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
         for (RetrievalReference reference : references) {
             grouped.computeIfAbsent(reference.getSourceChunkId(), ignored -> new ArrayList<>()).add(reference);
         }
+        for (List<RetrievalReference> chunkReferences : grouped.values()) {
+            chunkReferences.sort(Comparator.comparingDouble(this::referenceScore).reversed());
+        }
         return grouped;
+    }
+
+    private Map<Long, NeighborPageContext> buildNeighborPageContexts(List<ContentChunk> chunks) {
+        Map<Long, NeighborPageContext> contexts = new LinkedHashMap<>();
+        if (neighborContextChars <= 0 || chunks == null || chunks.isEmpty()) {
+            return contexts;
+        }
+
+        Map<Integer, StringBuilder> pageTextByPageNo = new LinkedHashMap<>();
+        for (ContentChunk chunk : chunks) {
+            Integer pageNo = chunk.getPageNo();
+            if (pageNo == null || pageNo <= 0) {
+                continue;
+            }
+            String text = stringValue(chunk.getChunkText()).trim();
+            if (text.isBlank()) {
+                continue;
+            }
+            StringBuilder pageText = pageTextByPageNo.computeIfAbsent(pageNo, ignored -> new StringBuilder());
+            if (pageText.length() > 0) {
+                pageText.append("\n\n");
+            }
+            pageText.append(text);
+        }
+        if (pageTextByPageNo.size() <= 1) {
+            return contexts;
+        }
+
+        List<Integer> pageNumbers = new ArrayList<>(pageTextByPageNo.keySet());
+        Map<Integer, Integer> pageIndexByPageNo = new LinkedHashMap<>();
+        for (int i = 0; i < pageNumbers.size(); i++) {
+            pageIndexByPageNo.put(pageNumbers.get(i), i);
+        }
+
+        for (ContentChunk chunk : chunks) {
+            if (chunk.getSourceChunkId() == null || chunk.getPageNo() == null) {
+                continue;
+            }
+            Integer index = pageIndexByPageNo.get(chunk.getPageNo());
+            if (index == null) {
+                continue;
+            }
+            Integer previousPageNo = index > 0 ? pageNumbers.get(index - 1) : null;
+            Integer nextPageNo = index + 1 < pageNumbers.size() ? pageNumbers.get(index + 1) : null;
+            String previousPageTail = previousPageNo == null ? "" : tail(pageTextByPageNo.get(previousPageNo).toString(), neighborContextChars);
+            String nextPageHead = nextPageNo == null ? "" : head(pageTextByPageNo.get(nextPageNo).toString(), neighborContextChars);
+            contexts.put(chunk.getSourceChunkId(),
+                    new NeighborPageContext(previousPageNo, previousPageTail, nextPageNo, nextPageHead));
+        }
+        return contexts;
+    }
+
+    private String head(String value, int maxLength) {
+        String text = stringValue(value).trim();
+        if (maxLength <= 0 || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength);
+    }
+
+    private String tail(String value, int maxLength) {
+        String text = stringValue(value).trim();
+        if (maxLength <= 0 || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(text.length() - maxLength);
+    }
+
+    private double referenceScore(RetrievalReference reference) {
+        if (reference == null) {
+            return 0D;
+        }
+        if (reference.getRankScore() != null) {
+            return reference.getRankScore().doubleValue();
+        }
+        if (reference.getScore() != null) {
+            return reference.getScore().doubleValue();
+        }
+        return 0D;
     }
 
     private int expectedReferenceCount(WorkflowTaskContext context) {
@@ -952,15 +1031,7 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
         if (!findings.isEmpty()) {
             return findings.size();
         }
-        return listOfMaps(result.get("issues")).size();
-    }
-
-    private int countResultFindings(List<Map<String, Object>> results) {
-        int count = 0;
-        for (Map<String, Object> result : results) {
-            count += countResultFindings(result);
-        }
-        return count;
+        return 0;
     }
 
     private Map<String, Object> mapValue(Object value) {
@@ -1088,13 +1159,13 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
         return slashCount % 2 == 1;
     }
 
-    private boolean isBusinessReportFindingsMode(AuditWorkflowNode node) {
-        Map<String, Object> config = jsonSupport.toMap(node.getNodeConfig());
-        return "business_report_findings".equals(String.valueOf(config.get("audit_mode")));
-    }
-
     private boolean isUploadedBasisWorkflow(WorkflowTaskContext context) {
         return "uploaded_basis_document_audit".equals(context.getTask().getWorkflowCode());
+    }
+
+    private boolean hasKnowledgeScope(WorkflowTaskContext context) {
+        Object value = context.getInput().get("knowledge_scope");
+        return value instanceof Map<?, ?> map && !map.isEmpty();
     }
 
     private String stringValue(Object value) {
@@ -1102,6 +1173,19 @@ public class AiAuditNodeExecutor implements WorkflowNodeExecutor {
     }
 
     private record ReferenceSelection(List<RetrievalReference> references, Map<String, Object> summary) {
+    }
+
+    private record NeighborPageContext(Integer previousPageNo,
+                                       String previousPageTail,
+                                       Integer nextPageNo,
+                                       String nextPageHead) {
+        private boolean hasContext() {
+            return !stringValue(previousPageTail).isBlank() || !stringValue(nextPageHead).isBlank();
+        }
+
+        private static String stringValue(String value) {
+            return value == null ? "" : value;
+        }
     }
 
     private record ChunkAuditOutput(int totalReferenceCount,

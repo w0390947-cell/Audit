@@ -41,6 +41,10 @@ public interface AuditAiMapper
             @Param("queuePosition") Integer queuePosition, @Param("taskStatus") String taskStatus,
             @Param("updateBy") String updateBy);
 
+    int updateAuditAiEstimatedDuration(@Param("aiTaskId") Long aiTaskId,
+            @Param("estimatedDuration") String estimatedDuration,
+            @Param("updateBy") String updateBy);
+
     int updateAuditAiReviewDecision(AuditAiTask task);
 
     int deleteAuditAiFindingByTaskIds(Long[] aiTaskIds);

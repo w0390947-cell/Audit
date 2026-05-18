@@ -1,5 +1,6 @@
 package com.ruoyi.web.controller.audit;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,11 +21,13 @@ import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.enums.BusinessType;
+import com.ruoyi.common.utils.file.FileUtils;
 import com.ruoyi.common.utils.poi.ExcelUtil;
 import com.ruoyi.system.domain.audit.AuditAiStats;
 import com.ruoyi.system.domain.audit.AuditAiTask;
 import com.ruoyi.system.service.audit.AuditAiReportPreviewService;
 import com.ruoyi.system.service.audit.IAuditAiService;
+import com.ruoyi.system.service.audit.impl.AuditAiDetectionResultPdfService;
 
 @RestController
 @RequestMapping("/audit/ai")
@@ -35,6 +38,9 @@ public class AuditAiController extends BaseController
 
     @Autowired
     private AuditAiReportPreviewService auditAiReportPreviewService;
+
+    @Autowired
+    private AuditAiDetectionResultPdfService auditAiDetectionResultPdfService;
 
     @PreAuthorize("@ss.hasPermi('audit:ai:list')")
     @GetMapping("/list")
@@ -92,6 +98,20 @@ public class AuditAiController extends BaseController
         util.exportExcel(response, list, "AI任务队列数据");
     }
 
+    @PreAuthorize("@ss.hasPermi('audit:ai:detail')")
+    @Log(title = "AI检测结果", businessType = BusinessType.EXPORT)
+    @PostMapping("/{aiTaskId}/detectionResultPdf")
+    public void detectionResultPdf(@PathVariable Long aiTaskId, HttpServletResponse response) throws IOException
+    {
+        AuditAiTask task = auditAiService.selectAuditAiTaskDetail(aiTaskId);
+        String taskNo = task == null ? String.valueOf(aiTaskId) : task.getTaskNo();
+        byte[] pdfBytes = auditAiDetectionResultPdfService.exportPdf(aiTaskId);
+        response.setContentType("application/pdf");
+        response.setContentLength(pdfBytes.length);
+        FileUtils.setAttachmentResponseHeader(response, "AI检测结果_" + safeFileName(taskNo) + ".pdf");
+        response.getOutputStream().write(pdfBytes);
+    }
+
     @PreAuthorize("@ss.hasPermi('audit:ai:changeStatus')")
     @Log(title = "AI任务队列", businessType = BusinessType.UPDATE)
     @PutMapping("/changeTaskStatus")
@@ -136,5 +156,14 @@ public class AuditAiController extends BaseController
     public AjaxResult remove(@PathVariable Long[] aiTaskIds)
     {
         return toAjax(auditAiService.deleteAuditAiTaskByIds(aiTaskIds));
+    }
+
+    private String safeFileName(String fileName)
+    {
+        if (fileName == null || fileName.trim().isEmpty())
+        {
+            return "未命名任务";
+        }
+        return fileName.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
     }
 }

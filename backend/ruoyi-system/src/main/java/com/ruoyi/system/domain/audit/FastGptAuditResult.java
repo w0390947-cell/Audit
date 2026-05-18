@@ -48,6 +48,16 @@ public class FastGptAuditResult implements Serializable
     private String chatId;
 
     /**
+     * 外部工作流任务 ID，用于最终结果保存幂等。
+     */
+    private String workflowTaskId;
+
+    /**
+     * 外部工作流运行 ID，用于最终结果保存幂等。
+     */
+    private String workflowRunId;
+
+    /**
      * 响应时间（毫秒）
      */
     private Long elapsedMs;
@@ -118,6 +128,26 @@ public class FastGptAuditResult implements Serializable
         this.chatId = chatId;
     }
 
+    public String getWorkflowTaskId()
+    {
+        return workflowTaskId;
+    }
+
+    public void setWorkflowTaskId(String workflowTaskId)
+    {
+        this.workflowTaskId = workflowTaskId;
+    }
+
+    public String getWorkflowRunId()
+    {
+        return workflowRunId;
+    }
+
+    public void setWorkflowRunId(String workflowRunId)
+    {
+        this.workflowRunId = workflowRunId;
+    }
+
     public Long getElapsedMs()
     {
         return elapsedMs;
@@ -156,6 +186,8 @@ public class FastGptAuditResult implements Serializable
                 ", findingsCount=" + (findings != null ? findings.size() : 0) +
                 ", rawContentSize=" + (rawContent != null ? rawContent.length() : 0) +
                 ", chatId='" + chatId + '\'' +
+                ", workflowTaskId='" + workflowTaskId + '\'' +
+                ", workflowRunId='" + workflowRunId + '\'' +
                 ", elapsedMs=" + elapsedMs +
                 '}';
     }

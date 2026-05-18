@@ -8,12 +8,10 @@ import com.audit.workflow.domain.RetrievalReference;
 import com.audit.workflow.domain.WorkflowTaskContext;
 import com.audit.workflow.enums.NodeType;
 import com.audit.workflow.repository.AuditRetrievalRepository;
-import com.audit.workflow.support.JsonSupport;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,12 +23,9 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
     private static final Set<String> FINDING_TYPES = Set.of("内容缺失", "格式错误", "数据异常", "逻辑错误", "标准不符", "其他");
 
     private final AuditRetrievalRepository retrievalRepository;
-    private final JsonSupport jsonSupport;
 
-    public ResultValidateNodeExecutor(AuditRetrievalRepository retrievalRepository,
-                                      JsonSupport jsonSupport) {
+    public ResultValidateNodeExecutor(AuditRetrievalRepository retrievalRepository) {
         this.retrievalRepository = retrievalRepository;
-        this.jsonSupport = jsonSupport;
     }
 
     @Override
@@ -40,61 +35,7 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
 
     @Override
     public NodeExecutionResult execute(WorkflowTaskContext context, AuditWorkflowNode node) {
-        if (isBusinessReportFindingsMode(node)) {
-            return validateBusinessReportFindings(context);
-        }
-        Object rawResults = context.getVariables().get("chunk_audit_results");
-        if (!(rawResults instanceof List<?> chunkResults)) {
-            throw new BusinessException("RESULT_SCHEMA_INVALID", "chunk audit results not found");
-        }
-
-        Set<String> allowedKbChunkIds = new HashSet<>();
-        for (RetrievalReference reference : retrievalRepository.findReferencesByTaskId(context.getTask().getTaskId())) {
-            if (reference.getKbChunkId() != null && !reference.getKbChunkId().isBlank()) {
-                allowedKbChunkIds.add(reference.getKbChunkId());
-            }
-        }
-
-        Map<String, Map<String, Object>> issueByKey = new LinkedHashMap<>();
-        for (Object rawResult : chunkResults) {
-            if (!(rawResult instanceof Map<?, ?> resultMap)) {
-                throw new BusinessException("RESULT_SCHEMA_INVALID", "chunk result is not object");
-            }
-            Long sourceChunkId = longValue(resultMap.get("source_chunk_id"));
-            Object issues = resultMap.get("issues");
-            if (issues == null) {
-                continue;
-            }
-            if (!(issues instanceof List<?> issueList)) {
-                throw new BusinessException("RESULT_SCHEMA_INVALID", "issues must be array");
-            }
-            for (int i = 0; i < issueList.size(); i++) {
-                Map<String, Object> issue = normalizeIssue(issueList.get(i), sourceChunkId, allowedKbChunkIds, i);
-                String key = issue.get("source_chunk_id") + "|" + issue.get("title") + "|" + issue.get("problem");
-                issueByKey.merge(key, issue, this::mergeIssue);
-            }
-        }
-
-        List<Map<String, Object>> finalIssues = new ArrayList<>(issueByKey.values());
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("overall_result", finalIssues.isEmpty() ? "通过" : "需要整改");
-        summary.put("risk_level", finalIssues.stream()
-                .map(issue -> String.valueOf(issue.get("risk_level")))
-                .reduce("low", this::higherRisk));
-        summary.put("total_issues", finalIssues.size());
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("task_id", context.getTask().getTaskNo());
-        result.put("workflow_code", context.getTask().getWorkflowCode());
-        result.put("summary", summary);
-        result.put("issues", finalIssues);
-        context.putVariable("validated_result", result);
-        context.putVariable("task_summary", summary);
-
-        Map<String, Object> output = new LinkedHashMap<>();
-        output.put("validate_status", "SUCCESS");
-        output.put("total_issues", finalIssues.size());
-        return NodeExecutionResult.success(output);
+        return validateBusinessReportFindings(context);
     }
 
     private NodeExecutionResult validateBusinessReportFindings(WorkflowTaskContext context) {
@@ -181,10 +122,8 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
         }
         Long sourceChunkId = longValue(firstNotBlank(finding.get("source_chunk_id"), location.get("source_chunk_id")));
         Integer sourceChunkNo = positiveInt(firstNotBlank(finding.get("source_chunk_no"), location.get("source_chunk_no")));
-        List<Map<String, Object>> basis = normalizeFindingBasis(finding.get("basis"));
-        if (basis.isEmpty() && sourceChunkId != null) {
-            basis = inferBasisFromReferences(referencesByChunk.getOrDefault(sourceChunkId, List.of()));
-        }
+        List<Map<String, Object>> basis = normalizeFindingBasis(
+                finding.get("basis"), referencesByChunk.getOrDefault(sourceChunkId, List.of()));
         if (basis.isEmpty() && !referencesByChunk.isEmpty()) {
             addValidationWarning(validationWarnings, "finding_basis_missing", index, finding);
             return null;
@@ -313,80 +252,6 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
         return text;
     }
 
-    private Map<String, Object> normalizeIssue(Object rawIssue, Long sourceChunkId, Set<String> allowedKbChunkIds, int issueIndex) {
-        if (!(rawIssue instanceof Map<?, ?> rawMap)) {
-            throw new BusinessException("RESULT_SCHEMA_INVALID", "issues[" + issueIndex + "] must be object");
-        }
-        Map<String, Object> issue = mapValue(rawMap);
-        fillRequiredIssueText(issue);
-        requireText(issue, "title", issueIndex);
-        requireText(issue, "problem", issueIndex);
-        requireText(issue, "suggestion", issueIndex);
-        issue.put("risk_level", normalizeRisk(issue.get("risk_level")));
-        issue.put("source_chunk_id", sourceChunkId);
-
-        Object rawLocation = issue.get("location");
-        Map<String, Object> location = mapValue(rawLocation);
-        if (location.isEmpty() && !stringValue(rawLocation).isBlank()) {
-            location.put("section", rawLocation);
-        }
-        Integer page = positiveInt(firstNotBlank(
-                location.get("page"),
-                location.get("pageNo"),
-                location.get("page_no"),
-                issue.get("page"),
-                issue.get("pageNo"),
-                issue.get("page_no")));
-        if (page != null) {
-            location.put("page", page);
-            location.put("pageNo", page);
-            location.put("page_no", page);
-            issue.put("page", page);
-            issue.put("pageNo", page);
-            issue.put("page_no", page);
-        }
-        location.putIfAbsent("source_chunk_id", sourceChunkId);
-        issue.put("location", location);
-
-        List<Map<String, Object>> basis = normalizeBasis(issue.get("basis"), allowedKbChunkIds);
-        if (!allowedKbChunkIds.isEmpty() && basis.isEmpty()) {
-            throw new BusinessException("RESULT_REFERENCE_INVALID", "issue basis has no valid kb_chunk_id");
-        }
-        issue.put("basis", basis);
-        return issue;
-    }
-
-    private void fillRequiredIssueText(Map<String, Object> issue) {
-        String title = firstNotBlank(
-                issue.get("title"),
-                issue.get("problem"),
-                issue.get("description"),
-                issue.get("problem_description"),
-                issue.get("basis_text"),
-                issue.get("suggestion"));
-        if (stringValue(issue.get("title")).isBlank()) {
-            issue.put("title", abbreviate(title, "AI审核发现问题", 30));
-        }
-
-        String problem = firstNotBlank(
-                issue.get("problem"),
-                issue.get("description"),
-                issue.get("problem_description"),
-                issue.get("title"));
-        if (stringValue(issue.get("problem")).isBlank()) {
-            issue.put("problem", abbreviate(problem, "模型返回的问题描述不完整，请人工复核该问题项。", 500));
-        }
-
-        String suggestion = firstNotBlank(
-                issue.get("suggestion"),
-                issue.get("recommendation"),
-                issue.get("rectification_suggestion"),
-                issue.get("fix_suggestion"));
-        if (stringValue(issue.get("suggestion")).isBlank()) {
-            issue.put("suggestion", abbreviate(suggestion, "请按审核依据补充或修正相关内容。", 500));
-        }
-    }
-
     private Map<Long, List<RetrievalReference>> referencesByChunk(WorkflowTaskContext context) {
         Map<Long, List<RetrievalReference>> referencesByChunk = new LinkedHashMap<>();
         for (RetrievalReference reference : retrievalRepository.findReferencesByTaskId(context.getTask().getTaskId())) {
@@ -398,75 +263,94 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
         return referencesByChunk;
     }
 
-    private List<Map<String, Object>> normalizeFindingBasis(Object rawBasis) {
+    private List<Map<String, Object>> normalizeFindingBasis(Object rawBasis, List<RetrievalReference> references) {
         List<Map<String, Object>> basis = new ArrayList<>();
+        Map<String, RetrievalReference> referenceByKbChunkId = referencesByKbChunkId(references);
         if (rawBasis instanceof List<?> list) {
             for (Object item : list) {
-                Map<String, Object> basisItem = normalizeFindingBasisItem(mapValue(item));
+                Map<String, Object> basisItem = normalizeFindingBasisItem(mapValue(item), referenceByKbChunkId);
                 if (!basisItem.isEmpty()) {
                     basis.add(basisItem);
                 }
             }
             return basis;
         }
-        Map<String, Object> item = normalizeFindingBasisItem(mapValue(rawBasis));
+        Map<String, Object> item = normalizeFindingBasisItem(mapValue(rawBasis), referenceByKbChunkId);
         if (!item.isEmpty()) {
             basis.add(item);
         }
         return basis;
     }
 
-    private Map<String, Object> normalizeFindingBasisItem(Map<String, Object> rawItem) {
+    private Map<String, Object> normalizeFindingBasisItem(Map<String, Object> rawItem,
+                                                         Map<String, RetrievalReference> referenceByKbChunkId) {
         if (rawItem.isEmpty()) {
             return rawItem;
         }
         Map<String, Object> item = new LinkedHashMap<>(rawItem);
         String kbChunkId = firstNotBlank(first(item, "kb_chunk_id", "kbChunkId", "chunk_id", "chunkId"));
+        RetrievalReference reference = kbChunkId.isBlank() ? null : referenceByKbChunkId.get(kbChunkId);
         if (!kbChunkId.isBlank()) {
             item.put("kb_chunk_id", kbChunkId);
         }
         String fileName = firstNotBlank(first(item, "file_name", "fileName", "source", "basis_file_name", "basisFileName"));
+        if (fileName.isBlank() && reference != null) {
+            fileName = stringValue(reference.getFileName());
+        }
         if (!fileName.isBlank()) {
             item.put("file_name", fileName);
         }
+        String versionNo = firstNotBlank(first(item, "version_no", "versionNo", "version"));
+        if (versionNo.isBlank() && reference != null) {
+            versionNo = stringValue(reference.getVersionNo());
+        }
+        if (!versionNo.isBlank()) {
+            item.put("version_no", versionNo);
+        }
+        Integer page = positiveInt(firstNotBlank(first(item, "page", "pageNo", "page_no")));
+        if (page == null && reference != null && reference.getPageNo() != null && reference.getPageNo() > 0) {
+            page = reference.getPageNo();
+        }
+        if (page != null) {
+            item.put("page", page);
+        }
+        String section = firstNotBlank(first(item, "section", "section_title", "sectionTitle"));
+        if (section.isBlank() && reference != null) {
+            section = stringValue(reference.getSectionTitle());
+        }
+        if (!section.isBlank()) {
+            item.put("section", section);
+        }
+        String ruleCode = firstNotBlank(first(item, "rule_code", "ruleCode"));
+        if (ruleCode.isBlank() && reference != null) {
+            ruleCode = stringValue(reference.getRuleCode());
+        }
+        if (!ruleCode.isBlank()) {
+            item.put("rule_code", ruleCode);
+        }
         String quote = firstNotBlank(first(item, "quote", "quote_text", "basis_quote", "basisQuote", "content"));
+        if (quote.isBlank() && reference != null) {
+            quote = reference.getChunkTextSnapshot();
+        }
         if (!quote.isBlank()) {
             item.put("quote", quote);
+        }
+        String conflictDescription = firstNotBlank(first(item, "conflict_description", "conflictDescription",
+                "conflict_note", "conflictNote", "basis_conflict", "basisConflict"));
+        if (!conflictDescription.isBlank()) {
+            item.put("conflict_description", conflictDescription);
         }
         return item;
     }
 
-    private List<Map<String, Object>> inferBasisFromReferences(List<RetrievalReference> references) {
-        List<Map<String, Object>> basis = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+    private Map<String, RetrievalReference> referencesByKbChunkId(List<RetrievalReference> references) {
+        Map<String, RetrievalReference> result = new LinkedHashMap<>();
         for (RetrievalReference reference : references) {
-            String key = firstNotBlank(reference.getKbChunkId(), reference.getFileName(), reference.getChunkTextSnapshot());
-            if (key.isBlank() || !seen.add(key)) {
-                continue;
-            }
-            Map<String, Object> item = new LinkedHashMap<>();
-            if (!stringValue(reference.getKbChunkId()).isBlank()) {
-                item.put("kb_chunk_id", reference.getKbChunkId());
-            }
-            if (!stringValue(reference.getFileName()).isBlank()) {
-                item.put("file_name", reference.getFileName());
-            }
-            if (!stringValue(reference.getSectionTitle()).isBlank()) {
-                item.put("section", reference.getSectionTitle());
-            }
-            if (reference.getPageNo() != null && reference.getPageNo() > 0) {
-                item.put("page", reference.getPageNo());
-            }
-            String quote = abbreviate(reference.getChunkTextSnapshot(), "", 220);
-            if (!quote.isBlank()) {
-                item.put("quote", quote);
-            }
-            basis.add(item);
-            if (basis.size() >= 2) {
-                break;
+            if (reference.getKbChunkId() != null && !reference.getKbChunkId().isBlank()) {
+                result.putIfAbsent(reference.getKbChunkId(), reference);
             }
         }
-        return basis;
+        return result;
     }
 
     private boolean isIncompleteFindingContent(Map<String, Object> finding) {
@@ -635,42 +519,6 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
                 finding.get("page_no"))) != null;
     }
 
-    private List<Map<String, Object>> normalizeBasis(Object rawBasis, Set<String> allowedKbChunkIds) {
-        List<Map<String, Object>> basis = new ArrayList<>();
-        if (!(rawBasis instanceof List<?> rawList)) {
-            return basis;
-        }
-        Set<String> seen = new HashSet<>();
-        for (Object rawItem : rawList) {
-            Map<String, Object> item = mapValue(rawItem);
-            String kbChunkId = stringValue(first(item, "kb_chunk_id", "chunk_id", "kbChunkId"));
-            if (kbChunkId.isBlank() || (!allowedKbChunkIds.isEmpty() && !allowedKbChunkIds.contains(kbChunkId))) {
-                continue;
-            }
-            if (seen.add(kbChunkId)) {
-                item.put("kb_chunk_id", kbChunkId);
-                basis.add(item);
-            }
-        }
-        return basis;
-    }
-
-    private Map<String, Object> mergeIssue(Map<String, Object> left, Map<String, Object> right) {
-        left.put("risk_level", higherRisk(String.valueOf(left.get("risk_level")), String.valueOf(right.get("risk_level"))));
-        List<Map<String, Object>> basis = new ArrayList<>(listOfMaps(left.get("basis")));
-        Set<String> seen = new HashSet<>();
-        for (Map<String, Object> item : basis) {
-            seen.add(stringValue(item.get("kb_chunk_id")));
-        }
-        for (Map<String, Object> item : listOfMaps(right.get("basis"))) {
-            if (seen.add(stringValue(item.get("kb_chunk_id")))) {
-                basis.add(item);
-            }
-        }
-        left.put("basis", basis);
-        return left;
-    }
-
     private String normalizeRisk(Object risk) {
         String value = risk == null ? "medium" : String.valueOf(risk).toLowerCase();
         if ("high".equals(value) || "medium".equals(value) || "low".equals(value)) {
@@ -689,12 +537,6 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
             case "medium" -> 2;
             default -> 1;
         };
-    }
-
-    private void requireText(Map<String, Object> issue, String key, int issueIndex) {
-        if (stringValue(issue.get(key)).isBlank()) {
-            throw new BusinessException("RESULT_SCHEMA_INVALID", "issues[" + issueIndex + "]." + key + " is required");
-        }
     }
 
     private void requireFindingText(Map<String, Object> finding, String key, int index) {
@@ -773,10 +615,5 @@ public class ResultValidateNodeExecutor implements WorkflowNodeExecutor {
         } catch (NumberFormatException ex) {
             return null;
         }
-    }
-
-    private boolean isBusinessReportFindingsMode(AuditWorkflowNode node) {
-        Map<String, Object> config = jsonSupport.toMap(node.getNodeConfig());
-        return "business_report_findings".equals(String.valueOf(config.get("audit_mode")));
     }
 }

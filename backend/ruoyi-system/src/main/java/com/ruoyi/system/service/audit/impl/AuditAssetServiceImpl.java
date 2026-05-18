@@ -30,14 +30,31 @@ import com.ruoyi.system.domain.audit.AuditAssetAiVersion;
 import com.ruoyi.system.domain.audit.AuditAssetRecord;
 import com.ruoyi.system.domain.audit.AuditAssetResubmitRecord;
 import com.ruoyi.system.domain.audit.AuditAssetStats;
+import com.ruoyi.system.domain.audit.AuditCommonResource;
 import com.ruoyi.system.mapper.audit.AuditAssetMapper;
+import com.ruoyi.system.mapper.audit.AuditLibraryMapper;
 import com.ruoyi.system.service.audit.IAuditAssetService;
+import com.ruoyi.system.service.audit.IAuditLibraryService;
+import com.ruoyi.system.service.audit.vector.AuditVectorTaskService;
 
 @Service
 public class AuditAssetServiceImpl implements IAuditAssetService
 {
+    private static final String REVIEW_STATUS_APPROVED = "approved";
+
+    private static final String REVIEW_STATUS_RETURNED = "returned";
+
     @Autowired
     private AuditAssetMapper auditAssetMapper;
+
+    @Autowired
+    private AuditLibraryMapper auditLibraryMapper;
+
+    @Autowired
+    private IAuditLibraryService auditLibraryService;
+
+    @Autowired
+    private AuditVectorTaskService auditVectorTaskService;
 
     @Override
     public List<AuditAssetRecord> selectAuditAssetRecordList(AuditAssetRecord record)
@@ -104,7 +121,7 @@ public class AuditAssetServiceImpl implements IAuditAssetService
         stats.setYearReturnedData(Arrays.asList(yearReturnedCount));
         stats.setMonthApprovedData(monthApprovedData);
         stats.setMonthReturnedData(monthReturnedData);
-        stats.setPieLabels(Arrays.asList("审核通过归档", "驳回"));
+        stats.setPieLabels(Arrays.asList("审核通过", "驳回"));
         stats.setPieData(Arrays.asList((int) approvedCount, (int) returnedCount));
         return stats;
     }
@@ -247,6 +264,55 @@ public class AuditAssetServiceImpl implements IAuditAssetService
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public int reviewLibraryResource(Long assetId, String reviewStatus, String updateBy)
+    {
+        if (assetId == null || StringUtils.isBlank(reviewStatus))
+        {
+            return 0;
+        }
+        AuditAssetRecord asset = auditAssetMapper.selectAuditAssetRecordById(assetId);
+        if (asset == null || asset.getLibraryResourceId() == null)
+        {
+            return 0;
+        }
+        if (!"reviewing".equals(asset.getReviewStatus()))
+        {
+            return 0;
+        }
+        AuditCommonResource resource = auditLibraryMapper.selectAuditCommonResourceById(asset.getLibraryResourceId());
+        if (resource == null)
+        {
+            return 0;
+        }
+        String operator = StringUtils.defaultIfBlank(updateBy, "system");
+        if (REVIEW_STATUS_APPROVED.equals(reviewStatus))
+        {
+            AuditAssetRecord decision = buildDecision(assetId, reviewStatus, operator,
+                    "人工审核通过，开始向量化入库。", "审核通过，已提交向量化任务。");
+            int rows = auditAssetMapper.updateAuditAssetReviewDecision(decision);
+            if (rows > 0)
+            {
+                auditVectorTaskService.cancelPendingTasks(new Long[] { asset.getLibraryResourceId() }, operator);
+                auditVectorTaskService.createIndexTask(asset.getLibraryResourceId(), operator);
+            }
+            return rows;
+        }
+        if (REVIEW_STATUS_RETURNED.equals(reviewStatus))
+        {
+            AuditAssetRecord decision = buildDecision(assetId, reviewStatus, operator,
+                    "人工审核驳回，文件已从审核文件库移除。", "审核驳回，文件不进入向量库。");
+            int rows = auditAssetMapper.updateAuditAssetReviewDecision(decision);
+            if (rows > 0)
+            {
+                auditLibraryService.deleteAuditCommonResourceByIds(new Long[] { asset.getLibraryResourceId() });
+            }
+            return rows;
+        }
+        return 0;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public int deleteAuditAssetRecordByIds(Long[] assetIds)
     {
         auditAssetMapper.deleteAuditAssetAiStepByAssetIds(assetIds);
@@ -283,6 +349,20 @@ public class AuditAssetServiceImpl implements IAuditAssetService
         step3.setStepTime(DateUtils.addMinutes(new Date(), 3));
         step3.setSortNum(3);
         auditAssetMapper.insertAuditAssetAiStep(step3);
+    }
+
+    private AuditAssetRecord buildDecision(Long assetId, String reviewStatus, String operator, String aiOpinion,
+            String finalOpinion)
+    {
+        AuditAssetRecord decision = new AuditAssetRecord();
+        decision.setAssetId(assetId);
+        decision.setReviewStatus(reviewStatus);
+        decision.setReviewer(operator);
+        decision.setReviewTime(new Date());
+        decision.setAiOpinion(aiOpinion);
+        decision.setFinalOpinion(finalOpinion);
+        decision.setUpdateBy(operator);
+        return decision;
     }
 
     private File resolveProfileFile(String fileUrl)

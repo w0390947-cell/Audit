@@ -9,6 +9,14 @@ export function listReview(query) {
   })
 }
 
+// 查询审核统计
+export function getReviewStats() {
+  return request({
+    url: '/audit/review/stats',
+    method: 'get'
+  })
+}
+
 // 查询审核详情
 export function getReview(taskId, versionId) {
   return request({

@@ -1,6 +1,7 @@
 package com.ruoyi.system.domain.audit;
 
 import java.util.Date;
+import java.util.List;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.ruoyi.common.core.domain.BaseEntity;
 
@@ -36,6 +37,8 @@ public class AuditReviewVersion extends BaseEntity
     private String reviewOpinion;
 
     private String currentFlag;
+
+    private List<AuditReviewBasisFile> basisFileList;
 
     public Long getVersionId()
     {
@@ -175,5 +178,15 @@ public class AuditReviewVersion extends BaseEntity
     public void setCurrentFlag(String currentFlag)
     {
         this.currentFlag = currentFlag;
+    }
+
+    public List<AuditReviewBasisFile> getBasisFileList()
+    {
+        return basisFileList;
+    }
+
+    public void setBasisFileList(List<AuditReviewBasisFile> basisFileList)
+    {
+        this.basisFileList = basisFileList;
     }
 }

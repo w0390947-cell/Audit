@@ -62,7 +62,11 @@ public class AuditReviewTask extends BaseEntity
 
     private List<AuditReviewStage> stageList;
 
+    private List<AuditUploadedFile> mainUploadedFiles;
+
     private List<AuditUploadedFile> basisUploadedFiles;
+
+    private List<AuditReviewBasisFile> basisFileList;
 
     public Long getTaskId()
     {
@@ -284,6 +288,16 @@ public class AuditReviewTask extends BaseEntity
         this.stageList = stageList;
     }
 
+    public List<AuditUploadedFile> getMainUploadedFiles()
+    {
+        return mainUploadedFiles;
+    }
+
+    public void setMainUploadedFiles(List<AuditUploadedFile> mainUploadedFiles)
+    {
+        this.mainUploadedFiles = mainUploadedFiles;
+    }
+
     public List<AuditUploadedFile> getBasisUploadedFiles()
     {
         return basisUploadedFiles;
@@ -292,5 +306,15 @@ public class AuditReviewTask extends BaseEntity
     public void setBasisUploadedFiles(List<AuditUploadedFile> basisUploadedFiles)
     {
         this.basisUploadedFiles = basisUploadedFiles;
+    }
+
+    public List<AuditReviewBasisFile> getBasisFileList()
+    {
+        return basisFileList;
+    }
+
+    public void setBasisFileList(List<AuditReviewBasisFile> basisFileList)
+    {
+        this.basisFileList = basisFileList;
     }
 }

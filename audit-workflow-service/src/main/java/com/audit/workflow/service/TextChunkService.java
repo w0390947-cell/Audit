@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class TextChunkService {
@@ -42,8 +43,16 @@ public class TextChunkService {
             if (text.isBlank()) {
                 continue;
             }
+            Integer blockPageNo = block.getPageNo();
+            if (pending.length() > 0 && isPageBoundary(pendingPageNo, blockPageNo)) {
+                addChunk(chunks, pending.toString(), pendingPageNo, pendingSectionTitle, pendingSectionPath);
+                pending = new StringBuilder();
+                pendingPageNo = null;
+                pendingSectionTitle = "";
+                pendingSectionPath = "";
+            }
             if (pending.length() == 0) {
-                pendingPageNo = block.getPageNo();
+                pendingPageNo = blockPageNo;
                 pendingSectionTitle = value(block.getSectionTitle());
                 pendingSectionPath = value(block.getSectionPath());
             }
@@ -56,10 +65,10 @@ public class TextChunkService {
                 pending = new StringBuilder(overlap(pending.toString()));
             }
             if (text.length() > maxChars) {
-                pending = splitLongText(chunks, text, block.getPageNo(), value(block.getSectionTitle()), value(block.getSectionPath()), pending);
+                pending = splitLongText(chunks, text, blockPageNo, value(block.getSectionTitle()), value(block.getSectionPath()), pending);
             } else {
                 append(pending, text);
-                pendingPageNo = block.getPageNo();
+                pendingPageNo = blockPageNo;
                 pendingSectionTitle = value(block.getSectionTitle());
                 pendingSectionPath = value(block.getSectionPath());
             }
@@ -73,6 +82,13 @@ public class TextChunkService {
             chunks.get(i).setChunkNo(i + 1);
         }
         return chunks;
+    }
+
+    private boolean isPageBoundary(Integer pendingPageNo, Integer blockPageNo) {
+        if (pendingPageNo == null && blockPageNo == null) {
+            return false;
+        }
+        return !Objects.equals(pendingPageNo, blockPageNo);
     }
 
     private StringBuilder splitLongText(List<ContentChunk> chunks, String text, Integer pageNo, String sectionTitle,

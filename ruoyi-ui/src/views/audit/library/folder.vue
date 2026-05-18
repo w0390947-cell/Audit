@@ -126,7 +126,7 @@
               :options="dict.type.audit_file_storage_status"
               :value="scope.row.status"
             />
-            <span v-else>{{ scope.row.resourceType === 'task' ? scope.row.metaText : '--' }}</span>
+            <span v-else>--</span>
           </template>
         </el-table-column>
         <el-table-column label="进度" min-width="220" align="left">
@@ -190,7 +190,14 @@
             >
               下载
             </el-button>
-            <el-button size="mini" type="text" @click="handleMove(scope.row)">移动到</el-button>
+            <el-button
+              v-if="canMoveItem(scope.row)"
+              size="mini"
+              type="text"
+              @click="handleMove(scope.row)"
+            >
+              移动到
+            </el-button>
             <el-button
               v-if="scope.row.resourceType === 'common'"
               size="mini"
@@ -199,7 +206,15 @@
             >
               历史版本
             </el-button>
-            <el-button size="mini" type="text" class="delete-btn" @click="handleDelete(scope.row)">删除</el-button>
+            <el-button
+              v-if="canDeleteItem(scope.row)"
+              size="mini"
+              type="text"
+              class="delete-btn"
+              @click="handleDelete(scope.row)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -220,9 +235,9 @@
                 <el-dropdown-item v-if="item.resourceType !== 'folder'" command="download">下载</el-dropdown-item>
                 <el-dropdown-item v-if="item.resourceType === 'folder'" command="rename" v-hasPermi="['audit:library:folder:edit']">编辑</el-dropdown-item>
                 <el-dropdown-item v-if="item.resourceType === 'common'" command="rename" v-hasPermi="['audit:library:common:edit']">编辑</el-dropdown-item>
-                <el-dropdown-item command="move">移动到</el-dropdown-item>
+                <el-dropdown-item v-if="canMoveItem(item)" command="move">移动到</el-dropdown-item>
                 <el-dropdown-item v-if="item.resourceType === 'common'" command="version">历史版本</el-dropdown-item>
-                <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                <el-dropdown-item v-if="canDeleteItem(item)" command="delete" divided>删除</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
           </div>
@@ -351,15 +366,12 @@ import {
   addLibraryFolder,
   addCommonResource,
   assignCommonResourceFolder,
-  assignTaskResourceFolder,
   delCommonResource,
   delLibraryFolder,
-  delTaskResource,
   getCommonResource,
   listCommonResource,
   listLibraryFolderOptions,
   listLibraryFolders,
-  listTaskResource,
   updateCommonResource,
   updateLibraryFolder
 } from '@/api/audit/library'
@@ -463,14 +475,12 @@ export default {
       const folderId = this.currentFolderId
       Promise.all([
         listLibraryFolders({ parentId: folderId }),
-        listCommonResource({ folderId, pageNum: 1, pageSize: 999 }),
-        listTaskResource({ folderId, pageNum: 1, pageSize: 999 })
-      ]).then(([folderResponse, commonResponse, taskResponse]) => {
+        listCommonResource({ folderId, pageNum: 1, pageSize: 999 })
+      ]).then(([folderResponse, commonResponse]) => {
         this.folderItems = (folderResponse.data || [])
           .filter(item => this.isFolderInCurrentDirectory(item, folderId))
           .map(item => this.normalizeFolder(item))
         this.fileItems = (commonResponse.rows || []).map(item => this.normalizeCommonResource(item))
-          .concat((taskResponse.rows || []).map(item => this.normalizeTaskResource(item)))
         this.loading = false
       }).catch(() => {
         this.folderItems = []
@@ -490,22 +500,15 @@ export default {
         pageNum: 1,
         pageSize: 999
       }, this.dateRange, 'LatestModifyTime')
-      const taskQuery = this.addDateRange({
-        keyword,
-        pageNum: 1,
-        pageSize: 999
-      }, this.dateRange, 'ArchiveTime')
       this.loading = true
       Promise.all([
-        listCommonResource(commonQuery),
-        this.queryParams.storageStatus ? Promise.resolve({ rows: [] }) : listTaskResource(taskQuery)
-      ]).then(([commonResponse, taskResponse]) => {
+        listCommonResource(commonQuery)
+      ]).then(([commonResponse]) => {
         this.searchMode = true
         this.folderPath = []
         this.currentFolder = null
         this.folderItems = folderRows
         this.fileItems = (commonResponse.rows || []).map(item => this.normalizeCommonResource(item))
-          .concat((taskResponse.rows || []).map(item => this.normalizeTaskResource(item)))
         this.loading = false
       }).catch(() => {
         this.searchMode = true
@@ -547,17 +550,6 @@ export default {
         metaText: item.fileSize || '文件'
       }
     },
-    normalizeTaskResource(item) {
-      return {
-        ...item,
-        itemKey: 'task_' + item.resourceId,
-        resourceType: 'task',
-        displayName: item.fileName || '--',
-        displayTime: item.archiveTime || item.updateTime || item.createTime,
-        fileUrl: item.previewFileUrl,
-        metaText: this.taskStatusLabel(item.collectStatus)
-      }
-    },
     handleOpenItem(item) {
       if (item.resourceType === 'folder') {
         this.enterFolder(item)
@@ -570,9 +562,9 @@ export default {
       if (command === 'preview') this.openFile(item.fileUrl)
       if (command === 'download') this.handleDownload(item)
       if (command === 'rename') this.handleRename(item)
-      if (command === 'move') this.handleMove(item)
+      if (command === 'move' && this.canMoveItem(item)) this.handleMove(item)
       if (command === 'version') this.handleVersion(item)
-      if (command === 'delete') this.handleDelete(item)
+      if (command === 'delete' && this.canDeleteItem(item)) this.handleDelete(item)
     },
     enterFolder(folder) {
       this.searchMode = false
@@ -751,12 +743,6 @@ export default {
           folderId: this.targetFolderId,
           folderName
         })
-      } else {
-        request = assignTaskResourceFolder({
-          resourceId: this.movingItem.resourceId,
-          folderId: this.targetFolderId,
-          folderName
-        })
       }
       request.then(() => {
         this.$modal.msgSuccess('移动成功')
@@ -771,12 +757,23 @@ export default {
         : '是否确认删除文件“' + name + '”？'
       this.$modal.confirm(message).then(() => {
         if (item.resourceType === 'folder') return delLibraryFolder(item.folderId)
-        if (item.resourceType === 'common') return delCommonResource(item.resourceId)
-        return delTaskResource(item.resourceId)
+        return delCommonResource(item.resourceId)
       }).then(() => {
         this.$modal.msgSuccess('删除成功')
         this.refreshAll()
       }).catch(() => {})
+    },
+    canMoveItem(item) {
+      if (!item) return false
+      if (item.resourceType === 'folder') return this.$auth.hasPermi('audit:library:folder:edit')
+      if (item.resourceType === 'common') return this.$auth.hasPermi('audit:library:common:assignFolder')
+      return false
+    },
+    canDeleteItem(item) {
+      if (!item) return false
+      if (item.resourceType === 'folder') return this.$auth.hasPermi('audit:library:folder:remove')
+      if (item.resourceType === 'common') return this.$auth.hasPermi('audit:library:common:remove')
+      return false
     },
     handleVersion(item) {
       getCommonResource(item.resourceId).then(response => {
@@ -833,7 +830,7 @@ export default {
       return url.substring(url.lastIndexOf('/') + 1)
     },
     getFileExt(item) {
-      const source = (item && (item.fileName || item.displayName || item.fileUrl || item.previewFileUrl)) || ''
+      const source = (item && (item.fileName || item.displayName || item.fileUrl)) || ''
       const cleanSource = source.split('?')[0].split('#')[0]
       const fileName = this.getFileName(cleanSource)
       const dotIndex = fileName.lastIndexOf('.')
@@ -861,11 +858,6 @@ export default {
       if (['zip', 'rar', 'gz', 'bz2', '7z'].includes(ext)) return 'is-archive'
       if (['mp4', 'avi', 'rmvb', 'mov', 'wmv'].includes(ext)) return 'is-video'
       return 'is-default'
-    },
-    taskStatusLabel(status) {
-      if (status === 'archived') return '已归集'
-      if (status === 'failed') return '归集失败'
-      return status || '归集处理中'
     }
   }
 }

@@ -3,12 +3,14 @@ package com.ruoyi.system.service.audit.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.config.AuditWorkflowProperties;
 import com.ruoyi.system.domain.audit.AuditAiFlowStage;
 import com.ruoyi.system.domain.audit.AuditAiReportPreview;
 import com.ruoyi.system.domain.audit.AuditAiTask;
+import com.ruoyi.system.domain.audit.AuditReviewBasisFile;
 import com.ruoyi.system.domain.audit.FastGptAuditFinding;
 import com.ruoyi.system.domain.audit.FastGptAuditResult;
 import com.ruoyi.system.domain.audit.workflow.AuditWorkflowCallback;
@@ -17,10 +19,12 @@ import com.ruoyi.system.domain.audit.workflow.AuditWorkflowStage;
 import com.ruoyi.system.exception.AuditWorkflowException;
 import com.ruoyi.system.mapper.audit.AuditAiFlowStageMapper;
 import com.ruoyi.system.mapper.audit.AuditAiMapper;
+import com.ruoyi.system.mapper.audit.AuditReviewMapper;
 import com.ruoyi.system.mapper.audit.AuditWorkflowCallbackEventMapper;
 import com.ruoyi.system.service.audit.AuditAiAnalysisPersistenceService;
 import com.ruoyi.system.service.audit.AuditAiReportPreviewService;
 import com.ruoyi.system.service.audit.IAuditWorkflowAuditService;
+import com.ruoyi.system.service.audit.support.AuditPdfConversionSupport;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -56,6 +60,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private static final String BIZ_ID_PREFIX = "AI-TASK-";
 
+    private static final String PDF_CONVERT_FAILED_MESSAGE = "文件无法转换为 PDF，请检查文件格式或重新上传 PDF";
+
     private static final Pattern PAGE_TEXT_PATTERN = Pattern.compile("(?:第\\s*)?(\\d+)\\s*页");
 
     private static final DateTimeFormatter NORMAL_DATE_TIME_FORMATTER =
@@ -67,6 +73,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private final AuditAiMapper auditAiMapper;
 
+    private final AuditReviewMapper auditReviewMapper;
+
     private final AuditAiFlowStageMapper auditAiFlowStageMapper;
 
     private final AuditWorkflowCallbackEventMapper callbackEventMapper;
@@ -75,25 +83,31 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private final AuditAiReportPreviewService reportPreviewService;
 
+    private final AuditPdfConversionSupport pdfConversionSupport;
+
     private final AuditAiQueuePositionService auditAiQueuePositionService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AuditWorkflowAuditServiceImpl(AuditWorkflowProperties properties,
             @Qualifier("auditWorkflowRestTemplate") RestTemplate auditWorkflowRestTemplate,
-            AuditAiMapper auditAiMapper, AuditAiFlowStageMapper auditAiFlowStageMapper,
+            AuditAiMapper auditAiMapper, AuditReviewMapper auditReviewMapper,
+            AuditAiFlowStageMapper auditAiFlowStageMapper,
             AuditWorkflowCallbackEventMapper callbackEventMapper,
             AuditAiAnalysisPersistenceService persistenceService,
             AuditAiReportPreviewService reportPreviewService,
+            AuditPdfConversionSupport pdfConversionSupport,
             AuditAiQueuePositionService auditAiQueuePositionService)
     {
         this.properties = properties;
         this.auditWorkflowRestTemplate = auditWorkflowRestTemplate;
         this.auditAiMapper = auditAiMapper;
+        this.auditReviewMapper = auditReviewMapper;
         this.auditAiFlowStageMapper = auditAiFlowStageMapper;
         this.callbackEventMapper = callbackEventMapper;
         this.persistenceService = persistenceService;
         this.reportPreviewService = reportPreviewService;
+        this.pdfConversionSupport = pdfConversionSupport;
         this.auditAiQueuePositionService = auditAiQueuePositionService;
     }
 
@@ -133,6 +147,8 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
         FastGptAuditResult result = fetchAndMapResult(workflowTaskId);
         result.setChatId(StringUtils.defaultIfBlank(workflowTaskNo, String.valueOf(workflowTaskId)));
+        result.setWorkflowTaskId(String.valueOf(workflowTaskId));
+        result.setWorkflowRunId(String.valueOf(workflowTaskId));
         result.setElapsedMs(System.currentTimeMillis() - startMs);
         return result;
     }
@@ -168,10 +184,11 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             {
                 FastGptAuditResult result = resolveCallbackResult(callback);
                 result.setChatId(StringUtils.defaultIfBlank(resolveWorkflowTaskNo(callback), runId));
-                boolean increaseAnalysisCount = !"completed".equals(task.getTaskStatus());
+                result.setWorkflowTaskId(workflowTaskId);
+                result.setWorkflowRunId(runId);
                 saveFlowStages(aiTaskId, runId, workflowTaskId, resolveWorkflowTaskNo(callback), callback,
                         "workflow-callback");
-                persistenceService.saveAuditResult(task, result, "workflow-callback", increaseAnalysisCount);
+                persistenceService.saveAuditResult(task, result, "workflow-callback", true);
                 callbackEventMapper.updateAuditWorkflowCallbackEventStatus(callbackEventId, "processed", null);
                 return;
             }
@@ -432,11 +449,18 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             metadata.put("preview_pdf_url", previewPdfUrl);
         }
         input.put("metadata", metadata);
-        if (hasBasisFiles(task))
+        List<AuditReviewBasisFile> basisFileList = loadBasisFileList(task);
+        List<AuditReviewBasisFile> uploadedBasisFiles = uploadedBasisFiles(task, basisFileList);
+        List<Long> libraryResourceIds = libraryResourceIds(basisFileList);
+        if (!uploadedBasisFiles.isEmpty())
         {
-            input.put("basis_files", buildBasisFiles(task.getBasisFileUrls()));
+            input.put("basis_files", buildBasisFiles(uploadedBasisFiles));
         }
-        else
+        if (!libraryResourceIds.isEmpty())
+        {
+            input.put("knowledge_scope", buildKnowledgeScope(libraryResourceIds));
+        }
+        else if (uploadedBasisFiles.isEmpty())
         {
             input.put("knowledge_scope", buildKnowledgeScope());
         }
@@ -446,7 +470,11 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
 
     private String resolvePreviewPdfUrl(AuditAiTask task, String fileType)
     {
-        if (!"doc".equals(fileType) && !"docx".equals(fileType))
+        if ("pdf".equals(fileType))
+        {
+            return "";
+        }
+        if (!isConvertibleToPdf(fileType))
         {
             return "";
         }
@@ -455,7 +483,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             AuditAiReportPreview preview = reportPreviewService.getReportPreview(task.getAiTaskId());
             if (preview == null || StringUtils.isBlank(preview.getPreviewFileUrl()))
             {
-                throw new AuditWorkflowException("报告预览PDF生成失败，未返回预览文件地址");
+                throw new AuditWorkflowException(PDF_CONVERT_FAILED_MESSAGE);
             }
             return toPublicFileUrl(preview.getPreviewFileUrl());
         }
@@ -465,42 +493,156 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         }
         catch (Exception e)
         {
-            throw new AuditWorkflowException("报告预览PDF生成失败：" + e.getMessage());
+            throw new AuditWorkflowException(PDF_CONVERT_FAILED_MESSAGE, e);
         }
+    }
+
+    private boolean isConvertibleToPdf(String fileType)
+    {
+        if (StringUtils.isBlank(fileType))
+        {
+            return false;
+        }
+        return switch (fileType.toLowerCase())
+        {
+            case "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "txt" -> true;
+            default -> false;
+        };
     }
 
     private String selectWorkflowCode(AuditAiTask task)
     {
-        if (hasBasisFiles(task))
+        if (!uploadedBasisFiles(task, loadBasisFileList(task)).isEmpty())
         {
             return StringUtils.defaultIfBlank(properties.getUploadedBasisWorkflowCode(), properties.getWorkflowCode());
         }
         return properties.getWorkflowCode();
     }
 
-    private boolean hasBasisFiles(AuditAiTask task)
+    private List<AuditReviewBasisFile> loadBasisFileList(AuditAiTask task)
     {
-        return task != null && !splitFileUrls(task.getBasisFileUrls()).isEmpty();
+        if (task == null)
+        {
+            return Collections.emptyList();
+        }
+        List<AuditReviewBasisFile> files = Collections.emptyList();
+        if (task.getReviewVersionId() != null)
+        {
+            files = auditReviewMapper.selectAuditReviewBasisFileListByVersionId(task.getReviewVersionId());
+        }
+        if ((files == null || files.isEmpty()) && task.getReviewTaskId() != null)
+        {
+            files = auditReviewMapper.selectAuditReviewBasisFileListByTaskId(task.getReviewTaskId());
+        }
+        return files == null ? Collections.emptyList() : files;
     }
 
-    private List<Map<String, Object>> buildBasisFiles(String basisFileUrls)
+    private List<AuditReviewBasisFile> uploadedBasisFiles(AuditAiTask task, List<AuditReviewBasisFile> basisFileList)
+    {
+        List<AuditReviewBasisFile> result = new ArrayList<>();
+        if (basisFileList != null)
+        {
+            for (AuditReviewBasisFile file : basisFileList)
+            {
+                if (file != null && AuditReviewBasisFile.SOURCE_UPLOADED.equals(file.getSourceType())
+                        && StringUtils.isNotBlank(file.getFileUrl()))
+                {
+                    result.add(file);
+                }
+            }
+        }
+        if (result.isEmpty() && (basisFileList == null || basisFileList.isEmpty()) && task != null)
+        {
+            int index = 1;
+            for (String fileUrl : splitFileUrls(task.getBasisFileUrls()))
+            {
+                AuditReviewBasisFile file = new AuditReviewBasisFile();
+                file.setSourceType(AuditReviewBasisFile.SOURCE_UPLOADED);
+                file.setFileUrl(fileUrl);
+                file.setFileName(extractFileName(fileUrl, String.format("basis-file-%03d", index++)));
+                result.add(file);
+            }
+        }
+        return result;
+    }
+
+    private List<Long> libraryResourceIds(List<AuditReviewBasisFile> basisFileList)
+    {
+        List<Long> result = new ArrayList<>();
+        if (basisFileList == null)
+        {
+            return result;
+        }
+        for (AuditReviewBasisFile file : basisFileList)
+        {
+            if (file != null && AuditReviewBasisFile.SOURCE_LIBRARY.equals(file.getSourceType())
+                    && file.getLibraryResourceId() != null && !result.contains(file.getLibraryResourceId()))
+            {
+                result.add(file.getLibraryResourceId());
+            }
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> buildBasisFiles(List<AuditReviewBasisFile> uploadedBasisFiles)
     {
         List<Map<String, Object>> basisFiles = new ArrayList<>();
         int index = 1;
-        for (String fileUrl : splitFileUrls(basisFileUrls))
+        for (AuditReviewBasisFile uploadedFile : uploadedBasisFiles)
         {
+            if (uploadedFile == null || StringUtils.isBlank(uploadedFile.getFileUrl()))
+            {
+                continue;
+            }
+            String fileUrl = uploadedFile.getFileUrl();
             String publicFileUrl = toPublicFileUrl(fileUrl);
             String fallbackName = String.format("basis-file-%03d", index);
-            String fileName = extractFileName(publicFileUrl, fallbackName);
+            String fileName = StringUtils.defaultIfBlank(uploadedFile.getOriginalFilename(),
+                    StringUtils.defaultIfBlank(uploadedFile.getFileName(), extractFileName(publicFileUrl, fallbackName)));
             Map<String, Object> basisFile = new HashMap<>();
             basisFile.put("file_id", String.format("BASIS-%03d", index));
             basisFile.put("file_url", publicFileUrl);
             basisFile.put("file_name", fileName);
-            basisFile.put("file_type", extractFileType(fileName, publicFileUrl));
+            String fileType = extractFileType(fileName, publicFileUrl);
+            basisFile.put("file_type", fileType);
+            String previewPdfUrl = resolveBasisPreviewPdfUrl(fileUrl, fileType);
+            if (StringUtils.isNotBlank(previewPdfUrl))
+            {
+                basisFile.put("preview_pdf_url", previewPdfUrl);
+            }
             basisFiles.add(basisFile);
             index++;
         }
         return basisFiles;
+    }
+
+    private String resolveBasisPreviewPdfUrl(String fileUrl, String fileType)
+    {
+        if (!shouldConvertBasisFileToPdf(fileType))
+        {
+            return "";
+        }
+        try
+        {
+            return toPublicFileUrl(pdfConversionSupport.resolvePreviewPdfUrl(fileUrl));
+        }
+        catch (Exception e)
+        {
+            throw new AuditWorkflowException(PDF_CONVERT_FAILED_MESSAGE, e);
+        }
+    }
+
+    private boolean shouldConvertBasisFileToPdf(String fileType)
+    {
+        if (StringUtils.isBlank(fileType))
+        {
+            return false;
+        }
+        return switch (fileType.toLowerCase())
+        {
+            case "xls", "xlsx", "ppt", "pptx", "html", "htm" -> true;
+            default -> false;
+        };
     }
 
     private List<String> splitFileUrls(String fileUrls)
@@ -541,6 +683,13 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
             scope.put("knowledge_base_codes", properties.getKnowledgeBaseCodes());
         }
         scope.put("effective_only", true);
+        return scope;
+    }
+
+    private Map<String, Object> buildKnowledgeScope(List<Long> resourceIds)
+    {
+        Map<String, Object> scope = buildKnowledgeScope();
+        scope.put("resource_ids", resourceIds);
         return scope;
     }
 
@@ -612,7 +761,7 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         {
             FastGptAuditFinding finding = new FastGptAuditFinding();
             JsonNode rawLocationNode = issue.path("location");
-            JsonNode locationNode = sanitizeLocationNode(rawLocationNode);
+            JsonNode locationNode = buildFindingLocationJson(rawLocationNode, issue);
             finding.setType(StringUtils.defaultIfBlank(issue.path("type").asText(""),
                     StringUtils.defaultIfBlank(issue.path("finding_type").asText(""), "AI审核问题")));
             finding.setTitle(StringUtils.defaultIfBlank(issue.path("title").asText(""),
@@ -631,16 +780,93 @@ public class AuditWorkflowAuditServiceImpl implements IAuditWorkflowAuditService
         return findings;
     }
 
-    private JsonNode sanitizeLocationNode(JsonNode locationNode)
+    private JsonNode buildFindingLocationJson(JsonNode locationNode, JsonNode issue)
     {
+        ObjectNode sanitized = sanitizeLocationNode(locationNode);
+        ArrayNode basisReferences = normalizeBasisReferences(issue.path("basis"));
+        if (basisReferences.size() > 0)
+        {
+            sanitized.set("basis_references", basisReferences);
+        }
+        return sanitized;
+    }
+
+    private ObjectNode sanitizeLocationNode(JsonNode locationNode)
+    {
+        ObjectNode sanitized = objectMapper.createObjectNode();
         if (locationNode == null || !locationNode.isObject())
         {
-            return locationNode;
+            return sanitized;
         }
-        ObjectNode sanitized = locationNode.deepCopy();
+        sanitized = locationNode.deepCopy();
         sanitized.remove("source_chunk_id");
         sanitized.remove("source_chunk_no");
         return sanitized;
+    }
+
+    private ArrayNode normalizeBasisReferences(JsonNode basisNode)
+    {
+        ArrayNode result = objectMapper.createArrayNode();
+        if (basisNode == null || basisNode.isMissingNode() || basisNode.isNull())
+        {
+            return result;
+        }
+        if (basisNode.isArray())
+        {
+            for (JsonNode item : basisNode)
+            {
+                ObjectNode basis = normalizeBasisReference(item);
+                if (basis.size() > 0)
+                {
+                    result.add(basis);
+                }
+            }
+            return result;
+        }
+        ObjectNode basis = normalizeBasisReference(basisNode);
+        if (basis.size() > 0)
+        {
+            result.add(basis);
+        }
+        return result;
+    }
+
+    private ObjectNode normalizeBasisReference(JsonNode item)
+    {
+        ObjectNode basis = objectMapper.createObjectNode();
+        if (item == null || !item.isObject())
+        {
+            return basis;
+        }
+        putTextIfNotBlank(basis, "kb_chunk_id", firstNonBlankText(item.path("kb_chunk_id"),
+                item.path("kbChunkId"), item.path("chunk_id"), item.path("chunkId")));
+        putTextIfNotBlank(basis, "file_name", firstNonBlankText(item.path("file_name"),
+                item.path("fileName"), item.path("source"), item.path("basis_file_name"),
+                item.path("basisFileName")));
+        putTextIfNotBlank(basis, "version_no", firstNonBlankText(item.path("version_no"),
+                item.path("versionNo"), item.path("version")));
+        Integer page = firstPositiveInt(item.path("page"), item.path("pageNo"), item.path("page_no"));
+        if (page != null)
+        {
+            basis.put("page", page);
+        }
+        putTextIfNotBlank(basis, "section", firstNonBlankText(item.path("section"),
+                item.path("section_title"), item.path("sectionTitle")));
+        putTextIfNotBlank(basis, "rule_code", firstNonBlankText(item.path("rule_code"), item.path("ruleCode")));
+        putTextIfNotBlank(basis, "quote", firstNonBlankText(item.path("quote"),
+                item.path("quote_text"), item.path("basis_quote"), item.path("basisQuote"), item.path("content")));
+        putTextIfNotBlank(basis, "conflict_description", firstNonBlankText(item.path("conflict_description"),
+                item.path("conflictDescription"), item.path("conflict_note"), item.path("conflictNote"),
+                item.path("basis_conflict"), item.path("basisConflict")));
+        return basis;
+    }
+
+    private void putTextIfNotBlank(ObjectNode target, String fieldName, String value)
+    {
+        if (StringUtils.isNotBlank(value))
+        {
+            target.put(fieldName, value.trim());
+        }
     }
 
     private String resolveLocationText(JsonNode issue, JsonNode location)

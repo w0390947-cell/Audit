@@ -22,6 +22,8 @@ public class VectorProperties
 
     private Reranker reranker = new Reranker();
 
+    private Ocr ocr = new Ocr();
+
     private Task task = new Task();
 
     private Lifecycle lifecycle = new Lifecycle();
@@ -86,6 +88,16 @@ public class VectorProperties
     public void setReranker(Reranker reranker)
     {
         this.reranker = reranker;
+    }
+
+    public Ocr getOcr()
+    {
+        return ocr;
+    }
+
+    public void setOcr(Ocr ocr)
+    {
+        this.ocr = ocr;
     }
 
     public Task getTask()
@@ -343,6 +355,93 @@ public class VectorProperties
         public void setInstruct(String instruct)
         {
             this.instruct = instruct;
+        }
+    }
+
+    public static class Ocr
+    {
+        private boolean enabled = false;
+
+        private String provider = "paddle";
+
+        private String endpoint;
+
+        private int dpi = 220;
+
+        private int maxPages = 300;
+
+        private int connectTimeout = 10000;
+
+        private int readTimeout = 60000;
+
+        public boolean isEnabled()
+        {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled)
+        {
+            this.enabled = enabled;
+        }
+
+        public String getProvider()
+        {
+            return provider;
+        }
+
+        public void setProvider(String provider)
+        {
+            this.provider = provider;
+        }
+
+        public String getEndpoint()
+        {
+            return normalizeBaseUrl(endpoint);
+        }
+
+        public void setEndpoint(String endpoint)
+        {
+            this.endpoint = endpoint;
+        }
+
+        public int getDpi()
+        {
+            return dpi;
+        }
+
+        public void setDpi(int dpi)
+        {
+            this.dpi = dpi;
+        }
+
+        public int getMaxPages()
+        {
+            return maxPages;
+        }
+
+        public void setMaxPages(int maxPages)
+        {
+            this.maxPages = maxPages;
+        }
+
+        public int getConnectTimeout()
+        {
+            return connectTimeout;
+        }
+
+        public void setConnectTimeout(int connectTimeout)
+        {
+            this.connectTimeout = connectTimeout;
+        }
+
+        public int getReadTimeout()
+        {
+            return readTimeout;
+        }
+
+        public void setReadTimeout(int readTimeout)
+        {
+            this.readTimeout = readTimeout;
         }
     }
 

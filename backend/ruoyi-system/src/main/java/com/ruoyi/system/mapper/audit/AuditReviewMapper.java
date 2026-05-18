@@ -2,14 +2,18 @@ package com.ruoyi.system.mapper.audit;
 
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
+import com.ruoyi.system.domain.audit.AuditReviewBasisFile;
 import com.ruoyi.system.domain.audit.AuditReviewIssue;
 import com.ruoyi.system.domain.audit.AuditReviewStage;
+import com.ruoyi.system.domain.audit.AuditReviewStats;
 import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
 
 public interface AuditReviewMapper
 {
     List<AuditReviewTask> selectAuditReviewTaskList(AuditReviewTask task);
+
+    AuditReviewStats selectAuditReviewStats(AuditReviewTask task);
 
     AuditReviewTask selectAuditReviewTaskById(Long taskId);
 
@@ -30,6 +34,14 @@ public interface AuditReviewMapper
     int insertAuditReviewVersion(AuditReviewVersion version);
 
     int deleteAuditReviewVersionByTaskIds(Long[] taskIds);
+
+    List<AuditReviewBasisFile> selectAuditReviewBasisFileListByTaskId(Long taskId);
+
+    List<AuditReviewBasisFile> selectAuditReviewBasisFileListByVersionId(Long versionId);
+
+    int insertAuditReviewBasisFileBatch(@Param("list") List<AuditReviewBasisFile> list);
+
+    int deleteAuditReviewBasisFileByTaskIds(Long[] taskIds);
 
     List<AuditReviewStage> selectAuditReviewStageListByVersionId(Long versionId);
 

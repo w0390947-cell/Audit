@@ -57,6 +57,21 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="sortNum" column="sort_num"/>
     </resultMap>
 
+    <resultMap id="AuditReviewBasisFileResult" type="AuditReviewBasisFile">
+        <result property="basisId" column="basis_id"/>
+        <result property="taskId" column="task_id"/>
+        <result property="versionId" column="version_id"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="libraryResourceId" column="library_resource_id"/>
+        <result property="fileUrl" column="file_url"/>
+        <result property="fileName" column="file_name"/>
+        <result property="originalFilename" column="original_filename"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="sortNum" column="sort_num"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
     <resultMap id="AuditReviewStageResult" type="AuditReviewStage">
         <result property="stageId" column="stage_id"/>
         <result property="versionId" column="version_id"/>
@@ -98,6 +113,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="reviewStatus != null and reviewStatus != ''">
                 and review_status = #{reviewStatus}
             </if>
+            <if test="createBy != null and createBy != ''">
+                and create_by = #{createBy}
+            </if>
             <if test="params.beginSubmitTime != null and params.beginSubmitTime != ''">
                 and submit_time <![CDATA[ >= ]]> concat(#{params.beginSubmitTime}, ' 00:00:00')
             </if>
@@ -106,6 +124,27 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             </if>
         </where>
         order by submit_time desc, task_id desc
+    </select>
+
+    <select id="selectAuditReviewStats" parameterType="AuditReviewTask" resultType="AuditReviewStats">
+        select
+            count(*) as totalCount,
+            coalesce(sum(case when review_status = 'reviewing' then 1 else 0 end), 0) as reviewingCount,
+            coalesce(sum(case when review_status = 'pending' then 1 else 0 end), 0) as pendingCount,
+            coalesce(sum(case when review_status = 'returned' then 1 else 0 end), 0) as returnedCount,
+            coalesce(sum(case when review_status = 'approved' then 1 else 0 end), 0) as approvedCount,
+            coalesce(sum(case when task_status = 'archived' then 1 else 0 end), 0) as archivedCount,
+            coalesce(sum(case when submit_time <![CDATA[ >= ]]> curdate() and submit_time <![CDATA[ < ]]> date_add(curdate(), interval 1 day) then 1 else 0 end), 0) as todayNewCount,
+            coalesce(sum(case when review_status in ('reviewing', 'pending', 'returned') or process_flag = '1' or task_status = 'paused' then 1 else 0 end), 0) as todoCount,
+            coalesce(sum(case when process_flag = '1' or task_status = 'paused' then 1 else 0 end), 0) as pausedCount,
+            coalesce(sum(case when priority = 'high' and review_status in ('reviewing', 'pending', 'returned') then 1 else 0 end), 0) as highPriorityPendingCount
+        from audit_review_task
+        <where>
+            del_flag = '0'
+            <if test="createBy != null and createBy != ''">
+                and create_by = #{createBy}
+            </if>
+        </where>
     </select>
 
     <select id="selectAuditReviewTaskById" parameterType="Long" resultMap="AuditReviewTaskResult">
@@ -194,6 +233,40 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <delete id="deleteAuditReviewVersionByTaskIds" parameterType="Long">
         delete from audit_review_version where task_id in
+        <foreach item="taskId" collection="array" open="(" separator="," close=")">
+            #{taskId}
+        </foreach>
+    </delete>
+
+    <select id="selectAuditReviewBasisFileListByTaskId" parameterType="Long" resultMap="AuditReviewBasisFileResult">
+        select basis_id, task_id, version_id, source_type, library_resource_id, file_url, file_name,
+               original_filename, file_size, sort_num, create_by, create_time
+        from audit_review_basis_file
+        where task_id = #{taskId}
+        order by version_id desc, sort_num asc, basis_id asc
+    </select>
+
+    <select id="selectAuditReviewBasisFileListByVersionId" parameterType="Long" resultMap="AuditReviewBasisFileResult">
+        select basis_id, task_id, version_id, source_type, library_resource_id, file_url, file_name,
+               original_filename, file_size, sort_num, create_by, create_time
+        from audit_review_basis_file
+        where version_id = #{versionId}
+        order by sort_num asc, basis_id asc
+    </select>
+
+    <insert id="insertAuditReviewBasisFileBatch">
+        insert into audit_review_basis_file (
+            task_id, version_id, source_type, library_resource_id, file_url, file_name,
+            original_filename, file_size, sort_num, create_by, create_time
+        ) values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.taskId}, #{item.versionId}, #{item.sourceType}, #{item.libraryResourceId}, #{item.fileUrl},
+             #{item.fileName}, #{item.originalFilename}, #{item.fileSize}, #{item.sortNum}, #{item.createBy}, sysdate())
+        </foreach>
+    </insert>
+
+    <delete id="deleteAuditReviewBasisFileByTaskIds" parameterType="Long">
+        delete from audit_review_basis_file where task_id in
         <foreach item="taskId" collection="array" open="(" separator="," close=")">
             #{taskId}
         </foreach>

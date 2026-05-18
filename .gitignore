@@ -103,3 +103,7 @@ temp/
 
 # Docs
 docs/
+
+# ocr-service (Python OCR microservice)
+ocr-service/.venv/
+ocr-service/__pycache__/

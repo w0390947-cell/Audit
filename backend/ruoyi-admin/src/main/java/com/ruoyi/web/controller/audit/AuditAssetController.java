@@ -103,6 +103,14 @@ public class AuditAssetController extends BaseController
         return toAjax(auditAssetService.reuploadAuditAsset(record, getUsername()));
     }
 
+    @PreAuthorize("@ss.hasPermi('audit:asset:review')")
+    @Log(title = "审核资源列表", businessType = BusinessType.UPDATE)
+    @PutMapping("/review")
+    public AjaxResult review(@RequestBody AuditAssetRecord record)
+    {
+        return toAjax(auditAssetService.reviewLibraryResource(record.getAssetId(), record.getReviewStatus(), getUsername()));
+    }
+
     @PreAuthorize("@ss.hasPermi('audit:asset:remove')")
     @Log(title = "审核资源列表", businessType = BusinessType.DELETE)
     @DeleteMapping("/{assetIds}")

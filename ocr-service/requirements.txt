@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+pillow
+
+# Local OCR provider.
+paddlepaddle==3.2.0
+paddleocr
+
+# Aliyun OCR provider.
+alibabacloud_ocr_api20210707
+alibabacloud_tea_openapi
+alibabacloud_tea_util
+alibabacloud_darabonba_stream

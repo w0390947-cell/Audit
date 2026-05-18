@@ -24,5 +24,7 @@ public interface IAuditAssetService
 
     int reuploadAuditAsset(AuditAssetResubmitRecord record, String updateBy);
 
+    int reviewLibraryResource(Long assetId, String reviewStatus, String updateBy);
+
     int deleteAuditAssetRecordByIds(Long[] assetIds);
 }

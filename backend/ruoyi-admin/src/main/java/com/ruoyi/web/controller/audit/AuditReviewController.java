@@ -28,6 +28,7 @@ import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
 import com.ruoyi.system.service.ISysUserService;
 import com.ruoyi.system.service.audit.IAuditReviewService;
+import com.ruoyi.system.service.audit.support.AuditBusinessPermissionUtils;
 
 @RestController
 @RequestMapping("/audit/review")
@@ -46,6 +47,13 @@ public class AuditReviewController extends BaseController
         startPage();
         List<AuditReviewTask> list = auditReviewService.selectAuditReviewTaskList(task);
         return getDataTable(list);
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:review:query')")
+    @GetMapping("/stats")
+    public AjaxResult stats()
+    {
+        return success(auditReviewService.selectAuditReviewStats());
     }
 
     @PreAuthorize("@ss.hasPermi('audit:review:export')")
@@ -77,6 +85,14 @@ public class AuditReviewController extends BaseController
     @GetMapping("/operators")
     public AjaxResult getOperators()
     {
+        if (AuditBusinessPermissionUtils.isCommonSubmitterOnly())
+        {
+            Map<String, Object> item = new HashMap<>();
+            item.put("userId", getUserId());
+            item.put("userName", getUsername());
+            item.put("nickName", getLoginUser().getUser().getNickName());
+            return success(java.util.Collections.singletonList(item));
+        }
         SysUser query = new SysUser();
         query.setStatus("0");
         List<Map<String, Object>> list = userService.selectUserList(query).stream()

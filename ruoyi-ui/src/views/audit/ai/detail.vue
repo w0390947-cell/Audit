@@ -114,7 +114,17 @@
 
       <div class="side-column">
         <div class="section-card">
-          <div class="section-title">检测结果</div>
+          <div class="section-title result-title">
+            <span>检测结果</span>
+            <el-button
+              size="mini"
+              type="primary"
+              plain
+              icon="el-icon-download"
+              :disabled="!canDownloadDetectionResult"
+              @click="downloadDetectionResultPdf"
+            >下载检测结果</el-button>
+          </div>
           <div v-if="displayIssueList.length">
             <div
               v-for="(item, index) in displayIssueList"
@@ -134,8 +144,39 @@
                 {{ line }}
               </div>
               <div v-if="issueQuote(item)" class="issue-quote">
-                <div class="issue-quote-label">原文引用</div>
+                <div class="issue-quote-label">报告原文引用</div>
                 <div class="issue-quote-text">{{ issueQuote(item) }}</div>
+              </div>
+              <div
+                v-if="issueBasisReferences(item).length"
+                class="issue-basis"
+                @click.stop
+                @keyup.enter.stop
+              >
+                <el-collapse>
+                  <el-collapse-item
+                    :title="'审核依据引用（' + issueBasisReferences(item).length + '条）'"
+                    :name="'basis_' + issueKey(item, index)"
+                  >
+                    <div
+                      v-for="(basis, basisIndex) in issueBasisReferences(item)"
+                      :key="'basis_' + index + '_' + basisIndex"
+                      class="issue-basis-item"
+                    >
+                      <div class="issue-basis-title">依据{{ basisIndex + 1 }}</div>
+                      <div v-if="basisMetaParts(basis).length" class="issue-basis-meta">
+                        <span
+                          v-for="(part, partIndex) in basisMetaParts(basis)"
+                          :key="'basis_meta_' + index + '_' + basisIndex + '_' + partIndex"
+                        >{{ part }}</span>
+                      </div>
+                      <div v-if="basis.quoteText" class="issue-basis-quote">{{ basis.quoteText }}</div>
+                      <div v-if="basis.conflictDescription" class="issue-basis-conflict">
+                        <span class="issue-basis-conflict-label">依据冲突：</span>{{ basis.conflictDescription }}
+                      </div>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
               </div>
             </div>
           </div>
@@ -268,6 +309,9 @@ export default {
         }))
       }
       return []
+    },
+    canDownloadDetectionResult() {
+      return this.detail.taskStatus === 'completed'
     }
   },
   created() {
@@ -942,6 +986,19 @@ export default {
       }
       window.open(encodeURI(this.detail.reportFileUrl))
     },
+    downloadDetectionResultPdf() {
+      if (!this.canDownloadDetectionResult) {
+        this.$message.warning('AI审核分析完成后才可以下载检测结果')
+        return
+      }
+      const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId
+      if (!aiTaskId) {
+        this.$message.warning('AI任务参数缺失，无法下载检测结果')
+        return
+      }
+      const taskNo = this.safeFileName(this.detail.taskNo || aiTaskId)
+      this.download('audit/ai/' + aiTaskId + '/detectionResultPdf', {}, 'AI检测结果_' + taskNo + '.pdf')
+    },
     handleIssueClick(item, index) {
       const page = this.resolveIssuePage(item)
       if (!page || !this.jumpToReportPage(page)) {
@@ -1083,7 +1140,7 @@ export default {
     formatFindingTitle(item) {
       const type = item.findingType || '其他'
       const title = item.findingTitle || 'AI发现问题'
-      return '识别异常类型：' + type + ' - ' + title
+      return type + ' - ' + title
     },
     issueLines(item) {
       const lines = this.splitStructuredText(this.sanitizeIssueContent(item.issueContent))
@@ -1097,6 +1154,80 @@ export default {
         return ''
       }
       return String(item.quoteText || '').trim()
+    },
+    issueBasisReferences(item) {
+      if (!item) {
+        return []
+      }
+      const location = this.parseLocationJson(item.locationJson) || item.location || {}
+      const rawBasis = location.basis_references ||
+        location.basisReferences ||
+        location.basis ||
+        item.basisReferences ||
+        item.basisReferenceList ||
+        item.basis
+      if (Array.isArray(rawBasis)) {
+        return rawBasis.map(item => this.normalizeBasisReference(item)).filter(item => item.hasContent)
+      }
+      const normalized = this.normalizeBasisReference(rawBasis)
+      return normalized.hasContent ? [normalized] : []
+    },
+    normalizeBasisReference(value) {
+      const item = value && typeof value === 'object' ? value : {}
+      const fileName = this.firstBasisValue(item, ['file_name', 'fileName', 'source', 'basis_file_name', 'basisFileName'])
+      const versionNo = this.firstBasisValue(item, ['version_no', 'versionNo', 'version'])
+      const pageNo = this.normalizePageNo(this.firstBasisValue(item, ['page', 'pageNo', 'page_no']))
+      const sectionTitle = this.firstBasisValue(item, ['section', 'section_title', 'sectionTitle'])
+      const ruleCode = this.firstBasisValue(item, ['rule_code', 'ruleCode'])
+      const quoteText = this.firstBasisValue(item, ['quote', 'quote_text', 'basis_quote', 'basisQuote', 'content'])
+      const conflictDescription = this.firstBasisValue(item, [
+        'conflict_description',
+        'conflictDescription',
+        'conflict_note',
+        'conflictNote',
+        'basis_conflict',
+        'basisConflict'
+      ])
+      return {
+        fileName,
+        versionNo,
+        pageNo,
+        sectionTitle,
+        ruleCode,
+        quoteText,
+        conflictDescription,
+        hasContent: !!(fileName || versionNo || pageNo || sectionTitle || ruleCode || quoteText || conflictDescription)
+      }
+    },
+    firstBasisValue(item, keys) {
+      for (const key of keys) {
+        if (item[key] !== null && item[key] !== undefined && String(item[key]).trim() !== '') {
+          return String(item[key]).trim()
+        }
+      }
+      return ''
+    },
+    basisMetaParts(basis) {
+      const parts = []
+      if (basis.fileName) {
+        parts.push('标准文件：' + basis.fileName)
+      }
+      if (basis.versionNo) {
+        parts.push('版本：' + basis.versionNo)
+      }
+      if (basis.pageNo) {
+        parts.push('页码：第' + basis.pageNo + '页')
+      }
+      if (basis.sectionTitle) {
+        parts.push('章节：' + basis.sectionTitle)
+      }
+      if (basis.ruleCode) {
+        parts.push('条款/规则：' + basis.ruleCode)
+      }
+      return parts
+    },
+    safeFileName(value) {
+      return String(value || '未命名任务').replace(/[\\/:*?"<>|\s]+/g, '_')
     },
     submitDecision(reviewStatus) {
       const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId
@@ -1246,6 +1377,14 @@ export default {
   line-height: 1;
   font-weight: 600;
   margin-bottom: 14px;
+}
+
+.result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 28px;
 }
 
 .report-shell {
@@ -1582,6 +1721,85 @@ export default {
   font-size: 13px;
   line-height: 1.8;
   word-break: break-word;
+}
+
+.issue-basis {
+  margin-top: 10px;
+}
+
+.issue-basis ::v-deep .el-collapse {
+  border-top: 1px solid #ebeef5;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.issue-basis ::v-deep .el-collapse-item__header {
+  height: 36px;
+  line-height: 36px;
+  color: #606266;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.issue-basis ::v-deep .el-collapse-item__content {
+  padding-bottom: 8px;
+}
+
+.issue-basis-item {
+  padding: 10px 0;
+  border-top: 1px dashed #ebeef5;
+}
+
+.issue-basis-item:first-child {
+  border-top: 0;
+}
+
+.issue-basis-title {
+  color: #303133;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.issue-basis-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.issue-basis-meta span {
+  color: #606266;
+  background: #f7f9fb;
+  border: 1px solid #edf1f6;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.issue-basis-quote {
+  color: #303133;
+  background: #fafbfc;
+  border-left: 3px solid #67c23a;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+.issue-basis-conflict {
+  margin-top: 8px;
+  color: #f56c6c;
+  background: #fef0f0;
+  border-left: 3px solid #f56c6c;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+.issue-basis-conflict-label {
+  font-weight: 600;
 }
 
 .result-empty {

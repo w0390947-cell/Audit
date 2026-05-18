@@ -41,6 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_vector_document_folder
 CREATE INDEX IF NOT EXISTS idx_audit_vector_document_kb
   ON audit_vector_document(knowledge_base_code);
 
+CREATE INDEX IF NOT EXISTS idx_audit_vector_document_workflow_basis_ns
+  ON audit_vector_document(resource_type, knowledge_base_code, vector_status);
+
 CREATE INDEX IF NOT EXISTS idx_audit_vector_document_category
   ON audit_vector_document(category_code);
 

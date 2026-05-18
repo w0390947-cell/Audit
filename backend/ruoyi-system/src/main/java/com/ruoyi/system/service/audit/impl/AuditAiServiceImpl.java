@@ -40,6 +40,9 @@ public class AuditAiServiceImpl implements IAuditAiService
     private AuditAiQueuePositionService auditAiQueuePositionService;
 
     @Autowired
+    private AuditAiEstimatedDurationAsyncService auditAiEstimatedDurationAsyncService;
+
+    @Autowired
     private FastGptProperties fastGptProperties;
 
     @Autowired
@@ -95,6 +98,8 @@ public class AuditAiServiceImpl implements IAuditAiService
 
         AuditAiTask aiTask = buildAuditAiTask(reviewTask, reviewVersion, operator);
         auditAiMapper.insertAuditAiTask(aiTask);
+        auditAiEstimatedDurationAsyncService.estimateAfterCommit(aiTask.getAiTaskId(), reviewTask, reviewVersion,
+                aiTask.getReportFileUrl(), aiTask.getReportFileName(), operator);
         auditAiQueuePositionService.resortQueuePositions(operator);
         return auditAiMapper.selectAuditAiTaskById(aiTask.getAiTaskId());
     }
@@ -175,10 +180,17 @@ public class AuditAiServiceImpl implements IAuditAiService
         int rows = 0;
         for (AuditAiTask task : changedList)
         {
+            if ("high".equals(task.getPriority()))
+            {
+                continue;
+            }
             rows += auditAiMapper.updateAuditAiTaskQueue(task.getAiTaskId(), bumpPriority(task.getPriority()),
                     task.getQueuePosition(), task.getTaskStatus(), updateBy);
         }
-        auditAiQueuePositionService.resortQueuePositions(updateBy);
+        if (rows > 0)
+        {
+            auditAiQueuePositionService.resortQueuePositions(updateBy);
+        }
         return rows;
     }
 
@@ -207,12 +219,6 @@ public class AuditAiServiceImpl implements IAuditAiService
             task.setTaskStatus("completed");
             task.setProgressPercent(100);
             task.setProgressText("人工审核已驳回");
-        }
-        else
-        {
-            task.setTaskStatus("waiting");
-            task.setProgressPercent(35);
-            task.setProgressText("待修改后重新提交");
         }
         int rows = auditAiMapper.updateAuditAiReviewDecision(task);
         syncReviewTaskDecision(dbTask, task);
@@ -310,6 +316,8 @@ public class AuditAiServiceImpl implements IAuditAiService
     {
         String reportFileUrl = StringUtils.defaultIfBlank(getPrimaryFileUrl(reviewVersion.getMainReportUrls()),
                 reviewVersion.getReportFileUrl());
+        String reportFileName = StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
+                extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf"));
         AuditAiTask aiTask = new AuditAiTask();
         aiTask.setReviewTaskId(reviewTask.getTaskId());
         aiTask.setReviewVersionId(reviewVersion.getVersionId());
@@ -320,14 +328,13 @@ public class AuditAiServiceImpl implements IAuditAiService
         aiTask.setPriority(StringUtils.defaultIfBlank(reviewTask.getPriority(), "medium"));
         aiTask.setQueuePosition(auditAiQueuePositionService.nextQueuePosition());
         aiTask.setTaskStatus("waiting");
-        aiTask.setEstimatedDuration("3分钟");
+        aiTask.setEstimatedDuration(AuditAiEstimatedDurationAsyncService.PENDING_TEXT);
         aiTask.setProgressPercent(0);
         aiTask.setProgressText("智能体等待处理");
         aiTask.setAiAnalysisCount(0);
         aiTask.setReviewStatus(StringUtils.defaultIfBlank(reviewTask.getReviewStatus(), "reviewing"));
         aiTask.setReportFileUrl(reportFileUrl);
-        aiTask.setReportFileName(StringUtils.defaultIfBlank(reviewVersion.getReportFileName(),
-                extractFileName(reportFileUrl, reviewTask.getProductName() + "_" + reviewVersion.getVersionNo() + ".pdf")));
+        aiTask.setReportFileName(reportFileName);
         aiTask.setAiSummary(StringUtils.defaultIfBlank(reviewVersion.getAiSummary(), ""));
         aiTask.setReviewOpinion(StringUtils.defaultIfBlank(reviewVersion.getReviewOpinion(), ""));
         aiTask.setReviewer("");

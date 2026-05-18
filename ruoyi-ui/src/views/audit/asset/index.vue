@@ -126,12 +126,10 @@
           <el-table-column label="AI分析次数" align="center" prop="aiAnalysisCount" width="100" />
           <el-table-column label="审核状态" align="center" prop="reviewStatus" width="120">
             <template slot-scope="scope">
-              <el-tag :class="['status-pill', scope.row.reviewStatus]" disable-transitions>
-                {{ reviewStatusLabel(scope.row.reviewStatus) }}
-              </el-tag>
+              <dict-tag :options="dict.type.audit_review_status" :value="scope.row.reviewStatus" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" align="left" min-width="190" class-name="small-padding">
+          <el-table-column label="操作" align="left" min-width="340" class-name="small-padding">
             <template slot-scope="scope">
               <el-button
                 size="mini"
@@ -145,6 +143,21 @@
                 @click="handleAssign(scope.row)"
                 v-hasPermi="['audit:asset:assign']"
               >权限分配</el-button>
+              <el-button
+                v-if="canReviewLibraryResource(scope.row)"
+                size="mini"
+                type="text"
+                @click="handleReview(scope.row, 'approved')"
+                v-hasPermi="['audit:asset:review']"
+              >审核通过</el-button>
+              <el-button
+                v-if="canReviewLibraryResource(scope.row)"
+                size="mini"
+                type="text"
+                class="delete-btn"
+                @click="handleReview(scope.row, 'returned')"
+                v-hasPermi="['audit:asset:review']"
+              >驳回</el-button>
               <el-button
                 size="mini"
                 type="text"
@@ -208,7 +221,8 @@ import {
   delAsset,
   listAsset,
   listAssetReviewers,
-  listAssetStats
+  listAssetStats,
+  reviewAsset
 } from '@/api/audit/asset'
 
 export default {
@@ -270,17 +284,8 @@ export default {
       }
       return [this.queryDate, this.queryDate]
     },
-    reviewStatusLabel(status) {
-      if (status === 'approved') {
-        return '审核通过'
-      }
-      if (status === 'returned') {
-        return '驳回'
-      }
-      if (status === 'pending') {
-        return '待修改'
-      }
-      return status || '--'
+    canReviewLibraryResource(row) {
+      return row && row.libraryResourceId && row.reviewStatus === 'reviewing'
     },
     getList() {
       this.loading = true
@@ -463,6 +468,22 @@ export default {
         this.getList()
       })
     },
+    handleReview(row, reviewStatus) {
+      const actionText = reviewStatus === 'approved' ? '审核通过' : '驳回'
+      const message = reviewStatus === 'approved'
+        ? '是否确认审核通过“' + row.productName + '”？通过后将开始向量化入库。'
+        : '是否确认驳回“' + row.productName + '”？驳回后将从审核文件库移除。'
+      this.$modal.confirm(message).then(() => {
+        return reviewAsset({
+          assetId: row.assetId,
+          reviewStatus
+        })
+      }).then(() => {
+        this.$modal.msgSuccess(actionText + '成功')
+        this.getList()
+        this.getStats()
+      }).catch(() => {})
+    },
     handleDelete(row) {
       this.$modal.confirm('是否确认删除任务编号为“' + row.taskNo + '”的数据项？').then(() => {
         return delAsset(row.assetId)
@@ -642,32 +663,6 @@ export default {
 
 ::v-deep .asset-table .el-button--text:last-child {
   margin-right: 0;
-}
-
-.status-pill {
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 0 10px;
-  border: 1px solid transparent;
-}
-
-.status-pill.approved {
-  background: #eaf3ff;
-  border-color: #dbe9ff;
-  color: #5c96ec;
-}
-
-.status-pill.pending {
-  background: #fef7e8;
-  border-color: #f9e8bd;
-  color: #e6a23c;
-}
-
-.status-pill.returned {
-  background: #fdeeed;
-  border-color: #fadad7;
-  color: #ef6d68;
 }
 
 .delete-btn {

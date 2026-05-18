@@ -212,7 +212,12 @@ export default {
     handleUploadSuccess(res, file) {
       if (res.code === 200) {
         const fileSizeText = this.formatFileSize(file.size)
-        this.uploadList.push({ name: res.fileName, url: res.fileName, size: file.size, fileSize: fileSizeText })
+        this.uploadList.push({
+          name: res.originalFilename || file.name || res.newFileName || res.fileName,
+          url: res.fileName,
+          size: file.size,
+          fileSize: fileSizeText
+        })
         this.$emit("upload-success", { response: res, file, size: file.size, fileSize: fileSizeText })
         this.uploadedSuccessfully()
       } else {

@@ -97,3 +97,29 @@ SET node_config = JSON_OBJECT('mock', false, 'audit_mode', 'business_report_find
     update_time = NOW()
 WHERE workflow_code = 'policy_document_audit'
   AND node_type IN ('AI_AUDIT', 'RESULT_VALIDATE');
+
+DELETE FROM audit_workflow_node
+WHERE workflow_code = 'policy_document_audit'
+  AND node_code = 'summary_generate';
+
+INSERT INTO audit_workflow_node (
+  workflow_code,
+  node_code,
+  node_name,
+  node_type,
+  node_order,
+  node_config,
+  enabled,
+  create_time,
+  update_time
+) VALUES (
+  'policy_document_audit',
+  'summary_generate',
+  'AI总结生成',
+  'SUMMARY_GENERATE',
+  65,
+  JSON_OBJECT('mock', false),
+  1,
+  NOW(),
+  NOW()
+);

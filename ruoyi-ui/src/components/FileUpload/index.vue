@@ -6,7 +6,7 @@
       :before-upload="handleBeforeUpload"
       :file-list="fileList"
       :data="data"
-      :limit="limit"
+      :limit="uploadLimit"
       :on-error="handleUploadError"
       :on-exceed="handleExceed"
       :on-success="handleUploadSuccess"
@@ -168,6 +168,9 @@ export default {
     showTip() {
       return this.isShowTip && (this.fileType || this.fileSize)
     },
+    uploadLimit() {
+      return this.limit > 0 ? this.limit : undefined
+    },
   },
   methods: {
     // 上传前校检格式和大小
@@ -201,7 +204,9 @@ export default {
     },
     // 文件个数超出
     handleExceed() {
-      this.$modal.msgError(`上传文件数量不能超过 ${this.limit} 个!`)
+      if (this.uploadLimit) {
+        this.$modal.msgError(`上传文件数量不能超过 ${this.uploadLimit} 个!`)
+      }
     },
     // 上传失败
     handleUploadError(err) {

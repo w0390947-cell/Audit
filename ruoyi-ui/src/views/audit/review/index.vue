@@ -196,7 +196,7 @@
           <div class="upload-panel">
             <FileUpload
               v-model="form.basisFileUrls"
-              :limit="8"
+              :limit="0"
               :file-size="20"
               :is-show-tip="false"
               :dropzone="true"
@@ -836,10 +836,6 @@ export default {
       }
       const currentUrls = this.splitFileUrls(this.form.basisFileUrls)
       const mergedUrls = Array.from(new Set(currentUrls.concat(selectedUrls)))
-      if (mergedUrls.length > 8) {
-        this.$message.warning('依据文件数量不能超过 8 个')
-        return
-      }
       this.form.basisFileUrls = mergedUrls.join(',')
       this.selectedLibraryFileList
         .filter(item => this.isLibraryFileSelectable(item))

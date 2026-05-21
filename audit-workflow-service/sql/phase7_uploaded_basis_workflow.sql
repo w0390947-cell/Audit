@@ -137,5 +137,6 @@ INSERT INTO audit_workflow_node (
 ('uploaded_basis_document_audit', 'basis_pack_or_match', '上传依据本地匹配', 'UPLOADED_BASIS_MATCH', 60, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
 ('uploaded_basis_document_audit', 'ai_audit', 'AI审核', 'AI_AUDIT', 70, JSON_OBJECT('mock', false, 'audit_mode', 'business_report_findings'), 1, NOW(), NOW()),
 ('uploaded_basis_document_audit', 'result_validate', '结果校验', 'RESULT_VALIDATE', 80, JSON_OBJECT('mock', false, 'audit_mode', 'business_report_findings'), 1, NOW(), NOW()),
+('uploaded_basis_document_audit', 'summary_generate', 'AI总结生成', 'SUMMARY_GENERATE', 85, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
 ('uploaded_basis_document_audit', 'result_save', '结果保存', 'RESULT_SAVE', 90, JSON_OBJECT('mock', false), 1, NOW(), NOW()),
 ('uploaded_basis_document_audit', 'callback', '回调通知', 'CALLBACK', 100, JSON_OBJECT('mock', false), 1, NOW(), NOW());

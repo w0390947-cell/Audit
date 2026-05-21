@@ -1428,6 +1428,17 @@ export default {
   padding-bottom: 10px;
 }
 
+@media (min-width: 1481px) {
+  .preview-column {
+    align-self: stretch;
+  }
+
+  .preview-column .section-card {
+    position: sticky;
+    top: 14px;
+  }
+}
+
 .info-table {
   width: 100%;
   border-collapse: collapse;

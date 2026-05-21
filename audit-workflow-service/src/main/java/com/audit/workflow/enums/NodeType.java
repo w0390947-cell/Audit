@@ -10,6 +10,7 @@ public final class NodeType {
     public static final String KNOWLEDGE_RETRIEVE = "KNOWLEDGE_RETRIEVE";
     public static final String AI_AUDIT = "AI_AUDIT";
     public static final String RESULT_VALIDATE = "RESULT_VALIDATE";
+    public static final String SUMMARY_GENERATE = "SUMMARY_GENERATE";
     public static final String RESULT_SAVE = "RESULT_SAVE";
     public static final String CALLBACK = "CALLBACK";
 

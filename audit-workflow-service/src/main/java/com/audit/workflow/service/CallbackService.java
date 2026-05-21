@@ -301,6 +301,12 @@ public class CallbackService {
             return "结果校验完成，候选问题" + output.get("candidate_count")
                     + "个，最终有效问题" + output.getOrDefault("valid_issue_count", output.get("totalIssues")) + "个";
         }
+        if ("summary_generate".equals(stageCode) && "LLM_GENERATED".equals(output.get("summary_status"))) {
+            return "AI总结生成完成";
+        }
+        if ("summary_generate".equals(stageCode) && "RULE_FALLBACK".equals(output.get("summary_status"))) {
+            return "AI总结生成失败，已使用规则摘要";
+        }
         if ("result_save".equals(stageCode) && output.containsKey("issue_count")) {
             return "审核结果保存完成，保存" + output.get("issue_count") + "条问题记录";
         }
@@ -325,6 +331,7 @@ public class CallbackService {
             case "uploaded_basis_match", "basis_pack_or_match" -> "上传依据匹配";
             case "ai_audit" -> "AI审核分析";
             case "result_validate" -> "结果校验";
+            case "summary_generate" -> "AI总结生成";
             case "result_save" -> "结果保存";
             case "callback" -> "回调通知";
             default -> stageCode == null || stageCode.isBlank() ? "执行阶段" : stageCode;

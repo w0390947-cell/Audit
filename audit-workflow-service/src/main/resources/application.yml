@@ -14,6 +14,10 @@ spring:
     default-property-inclusion: non_null
 
 audit:
+  ocr:
+    endpoint: ${AUDIT_OCR_ENDPOINT:http://127.0.0.1:8866/ocr}
+    provider: ${AUDIT_OCR_PROVIDER:paddle}
+    timeout-seconds: ${AUDIT_OCR_TIMEOUT_SECONDS:600}
   input:
     max-file-bytes: 52428800
     download-timeout-seconds: 30

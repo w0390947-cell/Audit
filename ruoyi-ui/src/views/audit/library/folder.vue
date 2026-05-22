@@ -294,6 +294,7 @@
               v-model="fileForm.fileUrl"
               :limit="1"
               :file-size="30"
+              :file-type="libraryFileTypes"
               :dropzone="true"
               button-text="上传文件"
               drop-hint="拖放文件"
@@ -390,6 +391,7 @@ export default {
       folderItems: [],
       fileItems: [],
       allFolderList: [],
+      libraryFileTypes: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'pdf', 'jpg', 'jpeg', 'png'],
       folderOpen: false,
       fileOpen: false,
       moveOpen: false,

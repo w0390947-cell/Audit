@@ -198,6 +198,7 @@
               v-model="form.basisFileUrls"
               :limit="0"
               :file-size="20"
+              :file-type="basisFileTypes"
               :is-show-tip="false"
               :dropzone="true"
               button-text="上传文件"
@@ -400,6 +401,7 @@ export default {
       libraryKeyword: '',
       libraryGlobalLoaded: false,
       selectedLibraryFiles: {},
+      basisFileTypes: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'pdf', 'jpg', 'jpeg', 'png'],
       ids: [],
       multiple: true,
       queryParams: {

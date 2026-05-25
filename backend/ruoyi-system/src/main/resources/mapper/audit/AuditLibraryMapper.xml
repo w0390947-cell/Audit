@@ -7,6 +7,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <resultMap id="AuditLibraryFolderResult" type="AuditLibraryFolder">
         <result property="folderId" column="folder_id"/>
         <result property="parentId" column="parent_id"/>
+        <result property="libraryType" column="library_type"/>
         <result property="folderName" column="folder_name"/>
         <result property="intro" column="intro"/>
         <result property="visibleScope" column="visible_scope"/>
@@ -22,6 +23,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <resultMap id="AuditCommonResourceResult" type="AuditCommonResource">
         <result property="resourceId" column="resource_id"/>
+        <result property="libraryType" column="library_type"/>
         <result property="documentName" column="document_name"/>
         <result property="folderId" column="folder_id"/>
         <result property="folderName" column="folder_name"/>
@@ -73,11 +75,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         (
             (select count(1)
              from audit_library_folder child
-             where child.parent_id = f.folder_id and child.del_flag = '0')
+             where child.parent_id = f.folder_id and child.library_type = f.library_type and child.del_flag = '0')
             +
             (select count(1)
              from audit_common_resource r
-             where r.folder_id = f.folder_id and r.del_flag = '0')
+             where r.folder_id = f.folder_id and r.library_type = f.library_type and r.del_flag = '0')
             +
             (select count(1)
              from audit_task_resource tr
@@ -86,12 +88,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </sql>
 
     <select id="selectAuditLibraryFolderList" parameterType="AuditLibraryFolder" resultMap="AuditLibraryFolderResult">
-        select f.folder_id, f.parent_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
+        select f.folder_id, f.parent_id, f.library_type, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
                f.create_time, f.update_by, f.update_time, f.remark,
                <include refid="folderFileCountSql"/>
         from audit_library_folder f
         <where>
             f.del_flag = '0'
+            <if test="libraryType != null and libraryType != ''">
+                and f.library_type = #{libraryType}
+            </if>
             <if test="folderName != null and folderName != ''">
                 and f.folder_name like concat('%', #{folderName}, '%')
             </if>
@@ -106,7 +111,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectAuditLibraryFolderById" parameterType="Long" resultMap="AuditLibraryFolderResult">
-        select f.folder_id, f.parent_id, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
+        select f.folder_id, f.parent_id, f.library_type, f.folder_name, f.intro, f.visible_scope, f.top_flag, f.del_flag, f.create_by,
                f.create_time, f.update_by, f.update_time, f.remark,
                <include refid="folderFileCountSql"/>
         from audit_library_folder f
@@ -115,9 +120,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertAuditLibraryFolder" parameterType="AuditLibraryFolder" useGeneratedKeys="true" keyProperty="folderId">
         insert into audit_library_folder
-        (parent_id, folder_name, intro, visible_scope, top_flag, del_flag, create_by, create_time, update_by, update_time, remark)
+        (parent_id, library_type, folder_name, intro, visible_scope, top_flag, del_flag, create_by, create_time, update_by, update_time, remark)
         values
-        (#{parentId}, #{folderName}, #{intro}, #{visibleScope}, #{topFlag}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
+        (#{parentId}, #{libraryType}, #{folderName}, #{intro}, #{visibleScope}, #{topFlag}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
     </insert>
 
     <update id="updateAuditLibraryFolder" parameterType="AuditLibraryFolder">
@@ -174,7 +179,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </delete>
 
     <sql id="selectAuditCommonResourceVo">
-        select resource_id, document_name, folder_id, folder_name, storage_status, progress_text, creator,
+        select resource_id, library_type, document_name, folder_id, folder_name, storage_status, progress_text, creator,
                latest_modify_time, file_size, file_name, file_url, current_version_no, del_flag,
                create_by, create_time, update_by, update_time, remark
         from audit_common_resource
@@ -184,6 +189,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <include refid="selectAuditCommonResourceVo"/>
         <where>
             del_flag = '0'
+            <if test="libraryType != null and libraryType != ''">
+                and library_type = #{libraryType}
+            </if>
             <if test="keyword != null and keyword != ''">
                 and (document_name like concat('%', #{keyword}, '%')
                     or file_name like concat('%', #{keyword}, '%'))
@@ -243,10 +251,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertAuditCommonResource" parameterType="AuditCommonResource" useGeneratedKeys="true" keyProperty="resourceId">
         insert into audit_common_resource
-        (document_name, folder_id, folder_name, storage_status, progress_text, creator, latest_modify_time, file_size,
+        (library_type, document_name, folder_id, folder_name, storage_status, progress_text, creator, latest_modify_time, file_size,
          file_name, file_url, current_version_no, del_flag, create_by, create_time, update_by, update_time, remark)
         values
-        (#{documentName}, #{folderId}, #{folderName}, #{storageStatus}, #{progressText}, #{creator}, #{latestModifyTime},
+        (#{libraryType}, #{documentName}, #{folderId}, #{folderName}, #{storageStatus}, #{progressText}, #{creator}, #{latestModifyTime},
          #{fileSize}, #{fileName}, #{fileUrl}, #{currentVersionNo}, '0', #{createBy}, sysdate(), #{updateBy}, sysdate(), #{remark})
     </insert>
 

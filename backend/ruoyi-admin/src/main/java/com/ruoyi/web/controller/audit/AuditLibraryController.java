@@ -38,14 +38,14 @@ public class AuditLibraryController extends BaseController
         return success(auditLibraryService.selectAuditLibraryFolderList(folder));
     }
 
-    @PreAuthorize("@ss.hasPermi('audit:library:folder:query')")
+    @PreAuthorize("@ss.hasAnyPermi('audit:library:folder:query,audit:library:common:query,audit:library:task:query')")
     @GetMapping("/folder/options")
-    public AjaxResult folderOptions()
+    public AjaxResult folderOptions(AuditLibraryFolder folder)
     {
-        return success(auditLibraryService.selectAuditLibraryFolderList(new AuditLibraryFolder()));
+        return success(auditLibraryService.selectAuditLibraryFolderList(folder));
     }
 
-    @PreAuthorize("@ss.hasPermi('audit:library:folder:add')")
+    @PreAuthorize("@ss.hasAnyPermi('audit:library:folder:add,audit:library:common:add')")
     @Log(title = "审核文件库", businessType = BusinessType.INSERT)
     @PostMapping("/folder")
     public AjaxResult addFolder(@Validated @RequestBody AuditLibraryFolder folder)
@@ -55,7 +55,7 @@ public class AuditLibraryController extends BaseController
         return toAjax(auditLibraryService.insertAuditLibraryFolder(folder));
     }
 
-    @PreAuthorize("@ss.hasPermi('audit:library:folder:edit')")
+    @PreAuthorize("@ss.hasAnyPermi('audit:library:folder:edit,audit:library:common:edit,audit:library:common:assignFolder')")
     @Log(title = "审核文件库", businessType = BusinessType.UPDATE)
     @PutMapping("/folder")
     public AjaxResult editFolder(@Validated @RequestBody AuditLibraryFolder folder)
@@ -64,7 +64,7 @@ public class AuditLibraryController extends BaseController
         return toAjax(auditLibraryService.updateAuditLibraryFolder(folder));
     }
 
-    @PreAuthorize("@ss.hasPermi('audit:library:folder:remove')")
+    @PreAuthorize("@ss.hasAnyPermi('audit:library:folder:remove,audit:library:common:remove')")
     @Log(title = "审核文件库", businessType = BusinessType.DELETE)
     @DeleteMapping("/folder/{folderIds}")
     public AjaxResult removeFolder(@PathVariable Long[] folderIds)

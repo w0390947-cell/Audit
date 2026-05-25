@@ -18,6 +18,8 @@ public class AuditCommonResource extends BaseEntity
 
     private Long[] excludeFolderIds;
 
+    private String libraryType;
+
     @Excel(name = "文档名称")
     private String documentName;
 
@@ -91,6 +93,16 @@ public class AuditCommonResource extends BaseEntity
     public void setExcludeFolderIds(Long[] excludeFolderIds)
     {
         this.excludeFolderIds = excludeFolderIds;
+    }
+
+    public String getLibraryType()
+    {
+        return libraryType;
+    }
+
+    public void setLibraryType(String libraryType)
+    {
+        this.libraryType = libraryType;
     }
 
     public String getDocumentName()

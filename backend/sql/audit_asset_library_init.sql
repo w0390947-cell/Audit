@@ -81,6 +81,7 @@ CREATE TABLE `audit_asset_resubmit_record` (
 CREATE TABLE `audit_library_folder` (
   `folder_id` bigint NOT NULL AUTO_INCREMENT COMMENT '文件库主键',
   `parent_id` bigint DEFAULT NULL COMMENT '父级文件库主键',
+  `library_type` varchar(20) NOT NULL DEFAULT 'audit' COMMENT '资源库类型：audit审核文件库 common常用文件资源',
   `folder_name` varchar(100) NOT NULL COMMENT '文件库名称',
   `intro` varchar(500) DEFAULT '' COMMENT '简介',
   `visible_scope` varchar(20) DEFAULT 'all' COMMENT '可见范围',
@@ -92,11 +93,13 @@ CREATE TABLE `audit_library_folder` (
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`folder_id`),
+  KEY `idx_audit_library_folder_type` (`library_type`),
   KEY `idx_audit_library_folder_parent` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核文件库';
 
 CREATE TABLE `audit_common_resource` (
   `resource_id` bigint NOT NULL AUTO_INCREMENT COMMENT '常用资源主键',
+  `library_type` varchar(20) NOT NULL DEFAULT 'audit' COMMENT '资源库类型：audit审核文件库 common常用文件资源',
   `document_name` varchar(100) NOT NULL COMMENT '文档名称',
   `folder_id` bigint DEFAULT NULL COMMENT '归属文件库主键',
   `folder_name` varchar(100) DEFAULT '' COMMENT '归属文件库名称',
@@ -114,7 +117,8 @@ CREATE TABLE `audit_common_resource` (
   `update_by` varchar(64) DEFAULT '' COMMENT '更新者',
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
-  PRIMARY KEY (`resource_id`)
+  PRIMARY KEY (`resource_id`),
+  KEY `idx_audit_common_resource_type` (`library_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='常用文件资源表';
 
 CREATE TABLE `audit_common_resource_version` (
@@ -246,7 +250,7 @@ INSERT INTO `sys_menu` (`menu_id`, `menu_name`, `parent_id`, `order_num`, `path`
 (2034, '审核文件库新增', 2032, 2, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:add', '#', 'admin', NOW(), ''),
 (2035, '审核文件库修改', 2032, 3, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:edit', '#', 'admin', NOW(), ''),
 (2036, '审核文件库删除', 2032, 4, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:folder:remove', '#', 'admin', NOW(), ''),
-(2037, '常用文件资源', 2031, 2, 'common', 'audit/library/common', 'AuditLibraryCommon', 1, 0, 'C', '1', '0', 'audit:library:common:list', 'documentation', 'admin', NOW(), '常用文件资源'),
+(2037, '常用文件资源', 2031, 2, 'common', 'audit/library/common', 'AuditLibraryCommon', 1, 0, 'C', '0', '0', 'audit:library:common:list', 'documentation', 'admin', NOW(), '常用文件资源'),
 (2038, '常用文件资源查询', 2037, 1, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:common:query', '#', 'admin', NOW(), ''),
 (2039, '常用文件资源新增', 2037, 2, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:common:add', '#', 'admin', NOW(), ''),
 (2040, '常用文件资源修改', 2037, 3, '#', '', '', 1, 0, 'F', '0', '0', 'audit:library:common:edit', '#', 'admin', NOW(), ''),

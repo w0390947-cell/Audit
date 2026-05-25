@@ -27,6 +27,10 @@ import com.ruoyi.system.service.audit.vector.AuditVectorLifecycleService;
 @Service
 public class AuditLibraryServiceImpl implements IAuditLibraryService
 {
+    private static final String LIBRARY_TYPE_AUDIT = "audit";
+
+    private static final String TASK_RESOURCE_FOLDER_NAME = "任务文件资源";
+
     private static final String RESOURCE_STATUS_REVIEWING = "reviewing";
 
     private static final String RESOURCE_PROGRESS_REVIEWING = "待审核通过后向量化";
@@ -43,6 +47,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public List<AuditLibraryFolder> selectAuditLibraryFolderList(AuditLibraryFolder folder)
     {
+        normalizeLibraryType(folder);
         return auditLibraryMapper.selectAuditLibraryFolderList(folder);
     }
 
@@ -55,6 +60,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public int insertAuditLibraryFolder(AuditLibraryFolder folder)
     {
+        normalizeLibraryType(folder);
         if (folder.getParentId() == null)
         {
             folder.setParentId(0L);
@@ -117,6 +123,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public List<AuditCommonResource> selectAuditCommonResourceList(AuditCommonResource resource)
     {
+        normalizeLibraryType(resource);
         return auditLibraryMapper.selectAuditCommonResourceList(resource);
     }
 
@@ -135,6 +142,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Transactional(rollbackFor = Exception.class)
     public int insertAuditCommonResource(AuditCommonResource resource)
     {
+        normalizeLibraryType(resource);
         normalizeCommonSubmitterResource(resource);
         if (StringUtils.isBlank(resource.getCurrentVersionNo()))
         {
@@ -184,6 +192,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Transactional(rollbackFor = Exception.class)
     public int updateAuditCommonResource(AuditCommonResource resource)
     {
+        normalizeLibraryType(resource);
         AuditCommonResource detail = auditLibraryMapper.selectAuditCommonResourceById(resource.getResourceId());
         if (detail == null)
         {
@@ -234,6 +243,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public int assignAuditCommonResourceFolder(AuditCommonResource resource)
     {
+        normalizeLibraryType(resource);
         int rows = auditLibraryMapper.updateAuditCommonResourceFolder(resource);
         if (rows > 0)
         {
@@ -272,6 +282,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     @Override
     public List<AuditCommonResource> selectAuditTaskCommonResourceList(AuditCommonResource resource)
     {
+        resource.setLibraryType(LIBRARY_TYPE_AUDIT);
         Set<Long> taskFolderIds = collectTaskResourceFolderIds();
         if (taskFolderIds.isEmpty())
         {
@@ -394,6 +405,7 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     private AuditLibraryFolder findTaskResourceRootFolder()
     {
         AuditLibraryFolder query = new AuditLibraryFolder();
+        query.setLibraryType(LIBRARY_TYPE_AUDIT);
         query.setParentId(0L);
         query.setFolderName(TASK_RESOURCE_FOLDER_NAME);
         List<AuditLibraryFolder> folders = auditLibraryMapper.selectAuditLibraryFolderList(query);
@@ -425,6 +437,22 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
             versionNumber = Integer.parseInt(numberText) + 1;
         }
         return "v" + versionNumber + ".0";
+    }
+
+    private void normalizeLibraryType(AuditLibraryFolder folder)
+    {
+        if (folder != null && StringUtils.isBlank(folder.getLibraryType()))
+        {
+            folder.setLibraryType(LIBRARY_TYPE_AUDIT);
+        }
+    }
+
+    private void normalizeLibraryType(AuditCommonResource resource)
+    {
+        if (resource != null && StringUtils.isBlank(resource.getLibraryType()))
+        {
+            resource.setLibraryType(LIBRARY_TYPE_AUDIT);
+        }
     }
 
     private void createOrResetAssetRecord(AuditCommonResource resource)

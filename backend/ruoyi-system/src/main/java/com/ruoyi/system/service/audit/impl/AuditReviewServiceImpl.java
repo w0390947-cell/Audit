@@ -35,7 +35,11 @@ import com.ruoyi.system.service.audit.support.AuditBusinessPermissionUtils;
 @Service
 public class AuditReviewServiceImpl implements IAuditReviewService
 {
-    private static final String BASIS_RESOURCE_FOLDER_NAME = "任务文件资源";
+    private static final String BASIS_RESOURCE_FOLDER_NAME = IAuditLibraryService.TASK_RESOURCE_FOLDER_NAME;
+    private static final String REVIEW_STATUS_REVIEWING = "reviewing";
+    private static final String REVIEW_STATUS_PENDING = "pending";
+    private static final String REVIEW_STATUS_RETURNED = "returned";
+    private static final String REVIEW_STATUS_APPROVED = "approved";
 
     @Autowired
     private AuditReviewMapper auditReviewMapper;
@@ -226,9 +230,20 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         task.setPriority(StringUtils.isNotBlank(task.getPriority()) ? task.getPriority() : dbTask.getPriority());
         task.setTaskStatus(StringUtils.isNotBlank(task.getTaskStatus()) ? task.getTaskStatus() : dbTask.getTaskStatus());
         task.setReviewStatus(StringUtils.isNotBlank(task.getReviewStatus()) ? task.getReviewStatus() : dbTask.getReviewStatus());
+        if (shouldResetReviewStatusAfterEdit(dbTask.getReviewStatus()))
+        {
+            task.setReviewStatus(REVIEW_STATUS_REVIEWING);
+        }
         task.setProcessFlag(StringUtils.isNotBlank(task.getProcessFlag()) ? task.getProcessFlag() : dbTask.getProcessFlag());
         task.setAiAnalysisCount(dbTask.getAiAnalysisCount() == null ? 1 : dbTask.getAiAnalysisCount() + 1);
         task.setSubmitTime(task.getSubmitTime() == null ? DateUtils.getNowDate() : task.getSubmitTime());
+    }
+
+    private boolean shouldResetReviewStatusAfterEdit(String reviewStatus)
+    {
+        return REVIEW_STATUS_APPROVED.equals(reviewStatus)
+                || REVIEW_STATUS_PENDING.equals(reviewStatus)
+                || REVIEW_STATUS_RETURNED.equals(reviewStatus);
     }
 
     private void normalizeCommonSubmitterUpdate(AuditReviewTask task)
@@ -244,8 +259,7 @@ public class AuditReviewServiceImpl implements IAuditReviewService
         }
         task.setSponsor(username);
         task.setTaskStatus("uploaded");
-        task.setReviewStatus("reviewing");
-        task.setProcessFlag("0");
+        task.setReviewStatus(REVIEW_STATUS_REVIEWING);
     }
 
     private void applyCommonSubmitterQueryScope(AuditReviewTask task)
@@ -277,9 +291,11 @@ public class AuditReviewServiceImpl implements IAuditReviewService
     private void checkCommonSubmitterTaskEditable(AuditReviewTask task)
     {
         checkCommonSubmitterTaskAccess(task);
-        if (AuditBusinessPermissionUtils.isCommonSubmitterOnly() && !"returned".equals(task.getReviewStatus()))
+        if (AuditBusinessPermissionUtils.isCommonSubmitterOnly()
+                && !REVIEW_STATUS_RETURNED.equals(task.getReviewStatus())
+                && !REVIEW_STATUS_PENDING.equals(task.getReviewStatus()))
         {
-            throw new ServiceException("普通用户只能修改已退回的审核任务");
+            throw new ServiceException("普通用户只能修改已退回或待修改的审核任务");
         }
     }
 

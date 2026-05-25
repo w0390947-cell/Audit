@@ -255,6 +255,7 @@ export default {
       queryDate: undefined,
       resourceList: [],
       folderOptions: [],
+      taskFolderIds: [],
       selectedIds: [],
       versionList: [],
       currentVersionNo: '',
@@ -291,8 +292,9 @@ export default {
     }
   },
   created() {
-    this.getList()
-    this.getFolderOptions()
+    this.getFolderOptions().then(() => {
+      this.getList()
+    })
   },
   methods: {
     formatDateRange() {
@@ -320,7 +322,7 @@ export default {
     },
     getList() {
       this.loading = true
-      listCommonResource(this.addDateRange({ ...this.queryParams }, this.formatDateRange(), 'LatestModifyTime')).then(response => {
+      listCommonResource(this.addDateRange({ ...this.queryParams, excludeFolderIds: this.taskFolderIds }, this.formatDateRange(), 'LatestModifyTime')).then(response => {
         this.resourceList = response.rows || []
         this.total = response.total || 0
         this.loading = false
@@ -329,9 +331,26 @@ export default {
       })
     },
     getFolderOptions() {
-      listLibraryFolderOptions().then(response => {
-        this.folderOptions = response.data || []
+      return listLibraryFolderOptions().then(response => {
+        const folders = response.data || []
+        const taskRoot = folders.find(item => item.folderName === '任务文件资源' && (!item.parentId || Number(item.parentId) === 0))
+        this.taskFolderIds = taskRoot ? this.collectFolderIds(folders, taskRoot.folderId) : []
+        this.folderOptions = folders.filter(item => !this.taskFolderIds.includes(item.folderId))
       })
+    },
+    collectFolderIds(folders, rootId) {
+      const ids = [rootId]
+      let changed = true
+      while (changed) {
+        changed = false
+        folders.forEach(item => {
+          if (ids.includes(item.parentId) && !ids.includes(item.folderId)) {
+            ids.push(item.folderId)
+            changed = true
+          }
+        })
+      }
+      return ids
     },
     progressWidth(row) {
       const widthMap = {

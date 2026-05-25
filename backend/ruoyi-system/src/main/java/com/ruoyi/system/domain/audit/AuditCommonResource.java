@@ -14,6 +14,10 @@ public class AuditCommonResource extends BaseEntity
 
     private Long[] resourceIds;
 
+    private Long[] folderIds;
+
+    private Long[] excludeFolderIds;
+
     @Excel(name = "文档名称")
     private String documentName;
 
@@ -67,6 +71,26 @@ public class AuditCommonResource extends BaseEntity
     public void setResourceIds(Long[] resourceIds)
     {
         this.resourceIds = resourceIds;
+    }
+
+    public Long[] getFolderIds()
+    {
+        return folderIds;
+    }
+
+    public void setFolderIds(Long[] folderIds)
+    {
+        this.folderIds = folderIds;
+    }
+
+    public Long[] getExcludeFolderIds()
+    {
+        return excludeFolderIds;
+    }
+
+    public void setExcludeFolderIds(Long[] excludeFolderIds)
+    {
+        this.excludeFolderIds = excludeFolderIds;
     }
 
     public String getDocumentName()

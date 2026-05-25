@@ -200,6 +200,19 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     #{resourceId}
                 </foreach>
             </if>
+            <if test="folderIds != null and folderIds.length > 0">
+                and folder_id in
+                <foreach item="folderId" collection="folderIds" open="(" separator="," close=")">
+                    #{folderId}
+                </foreach>
+            </if>
+            <if test="excludeFolderIds != null and excludeFolderIds.length > 0">
+                and (folder_id is null or folder_id not in
+                <foreach item="folderId" collection="excludeFolderIds" open="(" separator="," close=")">
+                    #{folderId}
+                </foreach>
+                )
+            </if>
             <if test="folderId != null and folderId == 0">
                 and (folder_id is null or folder_id = 0)
             </if>

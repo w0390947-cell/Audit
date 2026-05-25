@@ -144,6 +144,39 @@ public class AuditLibraryController extends BaseController
     }
 
     @PreAuthorize("@ss.hasPermi('audit:library:task:list')")
+    @GetMapping("/task/common/list")
+    public TableDataInfo taskCommonList(AuditCommonResource resource)
+    {
+        startPage();
+        List<AuditCommonResource> list = auditLibraryService.selectAuditTaskCommonResourceList(resource);
+        return getDataTable(list);
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:library:task:query')")
+    @GetMapping("/task/common/{resourceId}")
+    public AjaxResult getTaskCommonInfo(@PathVariable Long resourceId)
+    {
+        return success(auditLibraryService.selectAuditTaskCommonResourceDetail(resourceId));
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:library:task:edit')")
+    @Log(title = "任务文件资源", businessType = BusinessType.UPDATE)
+    @PutMapping("/task/common/assignFolder")
+    public AjaxResult assignTaskCommonFolder(@RequestBody AuditCommonResource resource)
+    {
+        resource.setUpdateBy(getUsername());
+        return toAjax(auditLibraryService.assignAuditTaskCommonResourceFolder(resource));
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:library:task:remove')")
+    @Log(title = "任务文件资源", businessType = BusinessType.DELETE)
+    @DeleteMapping("/task/common/{resourceIds}")
+    public AjaxResult removeTaskCommon(@PathVariable Long[] resourceIds)
+    {
+        return toAjax(auditLibraryService.deleteAuditTaskCommonResourceByIds(resourceIds));
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:library:task:list')")
     @GetMapping("/task/list")
     public TableDataInfo taskList(AuditTaskResource resource)
     {

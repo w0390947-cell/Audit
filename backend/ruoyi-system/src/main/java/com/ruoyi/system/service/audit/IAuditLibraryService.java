@@ -7,6 +7,8 @@ import com.ruoyi.system.domain.audit.AuditTaskResource;
 
 public interface IAuditLibraryService
 {
+    String TASK_RESOURCE_FOLDER_NAME = "任务文件资源";
+
     List<AuditLibraryFolder> selectAuditLibraryFolderList(AuditLibraryFolder folder);
 
     AuditLibraryFolder selectAuditLibraryFolderById(Long folderId);
@@ -30,6 +32,14 @@ public interface IAuditLibraryService
     int assignAuditTaskResourceFolder(AuditTaskResource resource);
 
     int deleteAuditCommonResourceByIds(Long[] resourceIds);
+
+    List<AuditCommonResource> selectAuditTaskCommonResourceList(AuditCommonResource resource);
+
+    AuditCommonResource selectAuditTaskCommonResourceDetail(Long resourceId);
+
+    int assignAuditTaskCommonResourceFolder(AuditCommonResource resource);
+
+    int deleteAuditTaskCommonResourceByIds(Long[] resourceIds);
 
     List<AuditTaskResource> selectAuditTaskResourceList(AuditTaskResource resource);
 

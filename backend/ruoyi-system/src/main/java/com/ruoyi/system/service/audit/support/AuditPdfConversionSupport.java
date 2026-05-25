@@ -123,7 +123,7 @@ public class AuditPdfConversionSupport
             {
                 rawPath = fileUrl;
             }
-            return URLDecoder.decode(rawPath, StandardCharsets.UTF_8);
+            return URLDecoder.decode(rawPath.replace("+", "%2B"), StandardCharsets.UTF_8);
         }
         catch (IllegalArgumentException e)
         {

@@ -92,6 +92,36 @@ export function listTaskResource(query) {
   })
 }
 
+export function listTaskCommonResource(query) {
+  return request({
+    url: '/audit/library/task/common/list',
+    method: 'get',
+    params: query
+  })
+}
+
+export function getTaskCommonResource(resourceId) {
+  return request({
+    url: '/audit/library/task/common/' + resourceId,
+    method: 'get'
+  })
+}
+
+export function assignTaskCommonResourceFolder(data) {
+  return request({
+    url: '/audit/library/task/common/assignFolder',
+    method: 'put',
+    data
+  })
+}
+
+export function delTaskCommonResource(resourceId) {
+  return request({
+    url: '/audit/library/task/common/' + resourceId,
+    method: 'delete'
+  })
+}
+
 export function reuploadTaskResource(data) {
   return request({
     url: '/audit/library/task/reupload',

@@ -545,7 +545,7 @@ export default {
       if (!this.isCommonSubmitterOnly()) {
         return true
       }
-      return row && row.reviewStatus === 'returned'
+      return row && ['returned', 'pending'].includes(row.reviewStatus)
     },
     submitForm() {
       this.$refs.form.validate(valid => {

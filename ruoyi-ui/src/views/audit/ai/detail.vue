@@ -192,7 +192,7 @@
             placeholder="请输入文字..."
             resize="none"
           />
-          <div class="decision-actions">
+          <div v-if="showDecisionActions" class="decision-actions">
             <el-button type="primary" size="small" @click="submitDecision('approved')" v-hasPermi="['audit:ai:review']">审核通过</el-button>
             <el-button size="small" @click="submitDecision('pending')" v-hasPermi="['audit:ai:review']">待修改</el-button>
             <el-button type="danger" size="small" @click="submitDecision('returned')" v-hasPermi="['audit:ai:review']">驳回</el-button>
@@ -251,7 +251,8 @@ export default {
       selectedIssueKey: '',
       stageLogOpen: false,
       currentStageLog: null,
-      detailPollTimer: null
+      detailPollTimer: null,
+      reviewDecisionSubmittedInCurrentView: false
     }
   },
   computed: {
@@ -312,6 +313,9 @@ export default {
     },
     canDownloadDetectionResult() {
       return this.detail.taskStatus === 'completed'
+    },
+    showDecisionActions() {
+      return this.detail.reviewStatus !== 'approved' || this.reviewDecisionSubmittedInCurrentView
     }
   },
   created() {
@@ -321,6 +325,7 @@ export default {
     this.ensureRouteAndFetch()
   },
   deactivated() {
+    this.reviewDecisionSubmittedInCurrentView = false
     this.stopDetailPolling()
   },
   beforeDestroy() {
@@ -328,6 +333,7 @@ export default {
   },
   watch: {
     '$route.params.aiTaskId'() {
+      this.reviewDecisionSubmittedInCurrentView = false
       this.stopDetailPolling()
       this.ensureRouteAndFetch()
     }
@@ -1248,6 +1254,7 @@ export default {
           reviewOpinion: this.reviewForm.reviewOpinion
         }).then(() => {
           this.$modal.msgSuccess(actionText + '成功')
+          this.reviewDecisionSubmittedInCurrentView = true
           this.getDetail()
         }).catch(() => {})
         return
@@ -1260,6 +1267,7 @@ export default {
         })
       }).then(() => {
         this.$modal.msgSuccess(actionText + '成功')
+        this.reviewDecisionSubmittedInCurrentView = true
         this.getDetail()
       }).catch(() => {})
     }

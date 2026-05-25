@@ -2,6 +2,7 @@ package com.ruoyi.system.service.audit.impl;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -269,6 +270,98 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     }
 
     @Override
+    public List<AuditCommonResource> selectAuditTaskCommonResourceList(AuditCommonResource resource)
+    {
+        Set<Long> taskFolderIds = collectTaskResourceFolderIds();
+        if (taskFolderIds.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        if (resource.getFolderId() != null && !taskFolderIds.contains(resource.getFolderId()))
+        {
+            return Collections.emptyList();
+        }
+        if (resource.getFolderId() == null)
+        {
+            resource.setFolderIds(taskFolderIds.toArray(new Long[0]));
+        }
+        return auditLibraryMapper.selectAuditCommonResourceList(resource);
+    }
+
+    @Override
+    public AuditCommonResource selectAuditTaskCommonResourceDetail(Long resourceId)
+    {
+        AuditCommonResource detail = selectAuditCommonResourceDetail(resourceId);
+        if (detail == null || !collectTaskResourceFolderIds().contains(detail.getFolderId()))
+        {
+            return null;
+        }
+        return detail;
+    }
+
+    @Override
+    public int assignAuditTaskCommonResourceFolder(AuditCommonResource resource)
+    {
+        Set<Long> taskFolderIds = collectTaskResourceFolderIds();
+        if (resource == null || resource.getResourceId() == null || resource.getFolderId() == null
+                || !taskFolderIds.contains(resource.getFolderId()))
+        {
+            return 0;
+        }
+        AuditCommonResource detail = auditLibraryMapper.selectAuditCommonResourceById(resource.getResourceId());
+        if (detail == null || !taskFolderIds.contains(detail.getFolderId()))
+        {
+            return 0;
+        }
+        int rows = auditLibraryMapper.updateAuditCommonResourceFolder(resource);
+        if (rows > 0)
+        {
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourceMoved(resource.getResourceId(), resource.getFolderId());
+            }
+        }
+        return rows;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteAuditTaskCommonResourceByIds(Long[] resourceIds)
+    {
+        if (resourceIds == null || resourceIds.length == 0)
+        {
+            return 0;
+        }
+        Set<Long> taskFolderIds = collectTaskResourceFolderIds();
+        List<Long> validIds = new ArrayList<>();
+        for (Long resourceId : resourceIds)
+        {
+            AuditCommonResource detail = auditLibraryMapper.selectAuditCommonResourceById(resourceId);
+            if (detail != null && taskFolderIds.contains(detail.getFolderId()))
+            {
+                validIds.add(resourceId);
+            }
+        }
+        if (validIds.isEmpty())
+        {
+            return 0;
+        }
+        Long[] ids = validIds.toArray(new Long[0]);
+        auditLibraryMapper.deleteAuditCommonResourceVersionByResourceIds(ids);
+        int rows = auditLibraryMapper.deleteAuditCommonResourceByIds(ids);
+        if (rows > 0)
+        {
+            AuditVectorLifecycleService lifecycleService = auditVectorLifecycleServiceProvider.getIfAvailable();
+            if (lifecycleService != null)
+            {
+                lifecycleService.onCommonResourcesDeleted(validIds);
+            }
+        }
+        return rows;
+    }
+
+    @Override
     public List<AuditTaskResource> selectAuditTaskResourceList(AuditTaskResource resource)
     {
         return auditLibraryMapper.selectAuditTaskResourceList(resource);
@@ -286,6 +379,37 @@ public class AuditLibraryServiceImpl implements IAuditLibraryService
     public int deleteAuditTaskResourceByIds(Long[] resourceIds)
     {
         return auditLibraryMapper.deleteAuditTaskResourceByIds(resourceIds);
+    }
+
+    private Set<Long> collectTaskResourceFolderIds()
+    {
+        AuditLibraryFolder root = findTaskResourceRootFolder();
+        if (root == null || root.getFolderId() == null)
+        {
+            return Collections.emptySet();
+        }
+        return collectDescendantFolderIds(new Long[] { root.getFolderId() });
+    }
+
+    private AuditLibraryFolder findTaskResourceRootFolder()
+    {
+        AuditLibraryFolder query = new AuditLibraryFolder();
+        query.setParentId(0L);
+        query.setFolderName(TASK_RESOURCE_FOLDER_NAME);
+        List<AuditLibraryFolder> folders = auditLibraryMapper.selectAuditLibraryFolderList(query);
+        if (folders == null)
+        {
+            return null;
+        }
+        for (AuditLibraryFolder folder : folders)
+        {
+            if (TASK_RESOURCE_FOLDER_NAME.equals(folder.getFolderName())
+                    && (folder.getParentId() == null || folder.getParentId() == 0L))
+            {
+                return folder;
+            }
+        }
+        return null;
     }
 
     private String nextVersionNo(String currentVersionNo)

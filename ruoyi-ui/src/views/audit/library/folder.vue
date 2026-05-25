@@ -45,7 +45,7 @@
         <div class="path-area">
           <el-breadcrumb separator="/">
             <el-breadcrumb-item>
-              <span class="breadcrumb-link" @click="goRoot">全部文件</span>
+              <span class="breadcrumb-link" @click="goRoot">{{ rootBreadcrumbName }}</span>
             </el-breadcrumb-item>
             <el-breadcrumb-item v-if="searchMode">搜索结果</el-breadcrumb-item>
             <el-breadcrumb-item v-for="(item, index) in folderPath" v-else :key="item.folderId">
@@ -70,14 +70,15 @@
             </el-radio-button>
           </el-radio-group>
           <el-button
+            v-if="canCreateFolder"
             icon="el-icon-folder-add"
             size="small"
             @click="handleAddFolder"
-            v-hasPermi="['audit:library:folder:add']"
           >
             新建文件夹
           </el-button>
           <el-button
+            v-if="allowUpload"
             type="primary"
             icon="el-icon-upload2"
             size="small"
@@ -174,7 +175,7 @@
               编辑
             </el-button>
             <el-button
-              v-if="scope.row.resourceType === 'common'"
+              v-if="allowUpload && scope.row.resourceType === 'common'"
               size="mini"
               type="text"
               @click="handleRename(scope.row)"
@@ -234,7 +235,7 @@
                 <el-dropdown-item v-if="item.resourceType !== 'folder'" command="preview">预览</el-dropdown-item>
                 <el-dropdown-item v-if="item.resourceType !== 'folder'" command="download">下载</el-dropdown-item>
                 <el-dropdown-item v-if="item.resourceType === 'folder'" command="rename" v-hasPermi="['audit:library:folder:edit']">编辑</el-dropdown-item>
-                <el-dropdown-item v-if="item.resourceType === 'common'" command="rename" v-hasPermi="['audit:library:common:edit']">编辑</el-dropdown-item>
+                <el-dropdown-item v-if="allowUpload && item.resourceType === 'common'" command="rename" v-hasPermi="['audit:library:common:edit']">编辑</el-dropdown-item>
                 <el-dropdown-item v-if="canMoveItem(item)" command="move">移动到</el-dropdown-item>
                 <el-dropdown-item v-if="item.resourceType === 'common'" command="version">历史版本</el-dropdown-item>
                 <el-dropdown-item v-if="canDeleteItem(item)" command="delete" divided>删除</el-dropdown-item>
@@ -313,7 +314,7 @@
       <el-form label-width="86px">
         <el-form-item label="目标目录">
           <el-select v-model="targetFolderId" filterable placeholder="请选择目标目录" style="width: 100%">
-            <el-option :value="0" label="全部文件" />
+            <el-option :value="rootMoveFolderId" :label="rootBreadcrumbName" />
             <el-option
               v-for="item in moveFolderOptions"
               :key="item.folderId"
@@ -367,12 +368,16 @@ import {
   addLibraryFolder,
   addCommonResource,
   assignCommonResourceFolder,
+  assignTaskCommonResourceFolder,
   delCommonResource,
+  delTaskCommonResource,
   delLibraryFolder,
   getCommonResource,
+  getTaskCommonResource,
   listCommonResource,
   listLibraryFolderOptions,
   listLibraryFolders,
+  listTaskCommonResource,
   updateCommonResource,
   updateLibraryFolder
 } from '@/api/audit/library'
@@ -381,12 +386,24 @@ export default {
   name: 'AuditLibraryFolder',
   components: { FileUpload },
   dicts: ['audit_file_storage_status'],
+  props: {
+    resourceScope: {
+      type: String,
+      default: 'common'
+    },
+    allowUpload: {
+      type: Boolean,
+      default: true
+    }
+  },
   data() {
     return {
       loading: false,
       searchMode: false,
       viewMode: 'table',
       currentFolder: null,
+      taskRootFolder: null,
+      taskFolderIds: [],
       folderPath: [],
       folderItems: [],
       fileItems: [],
@@ -437,14 +454,32 @@ export default {
     }
   },
   computed: {
+    isTaskScope() {
+      return this.resourceScope === 'task'
+    },
+    rootBreadcrumbName() {
+      return this.isTaskScope ? '任务文件资源' : '全部文件'
+    },
+    canCreateFolder() {
+      return this.$auth.hasPermi('audit:library:folder:add')
+    },
     managerItems() {
       return this.folderItems.concat(this.fileItems)
     },
     currentFolderId() {
+      if (this.isTaskScope && !this.currentFolder) {
+        return this.taskRootFolder ? this.taskRootFolder.folderId : undefined
+      }
       return this.currentFolder ? this.currentFolder.folderId : 0
     },
     currentFolderName() {
+      if (this.isTaskScope && !this.currentFolder) {
+        return this.taskRootFolder ? this.taskRootFolder.folderName : ''
+      }
       return this.currentFolder ? this.currentFolder.folderName : ''
+    },
+    rootMoveFolderId() {
+      return this.isTaskScope && this.taskRootFolder ? this.taskRootFolder.folderId : 0
     },
     moveFolderOptions() {
       const disabledIds = this.movingItem && this.movingItem.resourceType === 'folder'
@@ -452,9 +487,10 @@ export default {
         : []
       return this.allFolderList
         .filter(item => !disabledIds.includes(item.folderId))
+        .filter(item => !this.isTaskScope || !this.taskRootFolder || item.folderId !== this.taskRootFolder.folderId)
         .map(item => ({
           ...item,
-          pathName: this.buildFolderPath(item).map(path => path.folderName).join(' / ')
+          pathName: this.buildFolderPath(item).map(path => path.folderName).join(' / ') || item.folderName
         }))
     }
   },
@@ -469,18 +505,48 @@ export default {
     },
     getFolderOptions() {
       return listLibraryFolderOptions().then(response => {
-        this.allFolderList = response.data || []
+        const folders = response.data || []
+        const taskRoot = folders.find(item => item.folderName === '任务文件资源' && (!item.parentId || Number(item.parentId) === 0))
+        const taskFolderIds = taskRoot ? this.collectFolderIds(folders, taskRoot.folderId) : []
+        this.taskRootFolder = taskRoot || null
+        this.taskFolderIds = taskFolderIds
+        this.allFolderList = this.isTaskScope
+          ? folders.filter(item => taskFolderIds.includes(item.folderId))
+          : folders.filter(item => !taskFolderIds.includes(item.folderId))
       })
     },
+    collectFolderIds(folders, rootId) {
+      const ids = [rootId]
+      let changed = true
+      while (changed) {
+        changed = false
+        folders.forEach(item => {
+          if (ids.includes(item.parentId) && !ids.includes(item.folderId)) {
+            ids.push(item.folderId)
+            changed = true
+          }
+        })
+      }
+      return ids
+    },
     loadDirectory() {
+      if (this.isTaskScope && !this.taskRootFolder) {
+        this.folderItems = []
+        this.fileItems = []
+        return
+      }
       this.loading = true
       const folderId = this.currentFolderId
+      const resourceRequest = this.isTaskScope
+        ? listTaskCommonResource({ folderId, pageNum: 1, pageSize: 999 })
+        : listCommonResource({ folderId, pageNum: 1, pageSize: 999, excludeFolderIds: this.taskFolderIds })
       Promise.all([
         listLibraryFolders({ parentId: folderId }),
-        listCommonResource({ folderId, pageNum: 1, pageSize: 999 })
+        resourceRequest
       ]).then(([folderResponse, commonResponse]) => {
         this.folderItems = (folderResponse.data || [])
           .filter(item => this.isFolderInCurrentDirectory(item, folderId))
+          .filter(item => this.isTaskScope ? this.taskFolderIds.includes(item.folderId) : !this.taskFolderIds.includes(item.folderId))
           .map(item => this.normalizeFolder(item))
         this.fileItems = (commonResponse.rows || []).map(item => this.normalizeCommonResource(item))
         this.loading = false
@@ -491,9 +557,16 @@ export default {
       })
     },
     handleQuery() {
+      if (this.isTaskScope && !this.taskRootFolder) {
+        this.searchMode = true
+        this.folderItems = []
+        this.fileItems = []
+        return
+      }
       const keyword = (this.queryParams.keyword || '').trim()
       const hasResourceFilters = !!this.queryParams.storageStatus || (this.dateRange && this.dateRange.length)
       const folderRows = hasResourceFilters ? [] : this.allFolderList
+        .filter(item => !this.isTaskScope || item.folderId !== this.taskRootFolder.folderId)
         .filter(item => !keyword || (item.folderName || '').toLowerCase().includes(keyword.toLowerCase()))
         .map(item => this.normalizeFolder(item))
       const commonQuery = this.addDateRange({
@@ -502,9 +575,15 @@ export default {
         pageNum: 1,
         pageSize: 999
       }, this.dateRange, 'LatestModifyTime')
+      if (this.isTaskScope) {
+        commonQuery.folderIds = this.taskFolderIds
+      } else {
+        commonQuery.excludeFolderIds = this.taskFolderIds
+      }
+      const resourceRequest = this.isTaskScope ? listTaskCommonResource(commonQuery) : listCommonResource(commonQuery)
       this.loading = true
       Promise.all([
-        listCommonResource(commonQuery)
+        resourceRequest
       ]).then(([commonResponse]) => {
         this.searchMode = true
         this.folderPath = []
@@ -599,6 +678,9 @@ export default {
       const path = []
       let cursor = folder
       while (cursor && cursor.folderId) {
+        if (this.isTaskScope && this.taskRootFolder && cursor.folderId === this.taskRootFolder.folderId) {
+          break
+        }
         path.unshift(cursor)
         if (!cursor.parentId) break
         cursor = this.allFolderList.find(item => item.folderId === cursor.parentId)
@@ -740,11 +822,12 @@ export default {
           topFlag: this.movingItem.topFlag || '0'
         })
       } else if (this.movingItem.resourceType === 'common') {
-        request = assignCommonResourceFolder({
+        const payload = {
           resourceId: this.movingItem.resourceId,
           folderId: this.targetFolderId,
           folderName
-        })
+        }
+        request = this.isTaskScope ? assignTaskCommonResourceFolder(payload) : assignCommonResourceFolder(payload)
       }
       request.then(() => {
         this.$modal.msgSuccess('移动成功')
@@ -759,7 +842,7 @@ export default {
         : '是否确认删除文件“' + name + '”？'
       this.$modal.confirm(message).then(() => {
         if (item.resourceType === 'folder') return delLibraryFolder(item.folderId)
-        return delCommonResource(item.resourceId)
+        return this.isTaskScope ? delTaskCommonResource(item.resourceId) : delCommonResource(item.resourceId)
       }).then(() => {
         this.$modal.msgSuccess('删除成功')
         this.refreshAll()
@@ -768,17 +851,26 @@ export default {
     canMoveItem(item) {
       if (!item) return false
       if (item.resourceType === 'folder') return this.$auth.hasPermi('audit:library:folder:edit')
-      if (item.resourceType === 'common') return this.$auth.hasPermi('audit:library:common:assignFolder')
+      if (item.resourceType === 'common') {
+        return this.isTaskScope
+          ? this.$auth.hasPermi('audit:library:task:edit')
+          : this.$auth.hasPermi('audit:library:common:assignFolder')
+      }
       return false
     },
     canDeleteItem(item) {
       if (!item) return false
       if (item.resourceType === 'folder') return this.$auth.hasPermi('audit:library:folder:remove')
-      if (item.resourceType === 'common') return this.$auth.hasPermi('audit:library:common:remove')
+      if (item.resourceType === 'common') {
+        return this.isTaskScope
+          ? this.$auth.hasPermi('audit:library:task:remove')
+          : this.$auth.hasPermi('audit:library:common:remove')
+      }
       return false
     },
     handleVersion(item) {
-      getCommonResource(item.resourceId).then(response => {
+      const request = this.isTaskScope ? getTaskCommonResource(item.resourceId) : getCommonResource(item.resourceId)
+      request.then(response => {
         const data = response.data || {}
         this.versionList = data.versionList || []
         this.currentVersionNo = data.currentVersionNo || ''

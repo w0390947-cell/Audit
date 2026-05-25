@@ -793,6 +793,12 @@ export default {
     },
     handleFileUploadSuccess(payload) {
       this.fileForm.fileSize = payload.fileSize || ''
+      if (!this.fileForm.documentName || !this.fileForm.documentName.trim()) {
+        const response = payload.response || {}
+        const file = payload.file || {}
+        this.fileForm.documentName = response.originalFilename || file.name || response.newFileName ||
+          this.getFileName(response.fileName || this.fileForm.fileUrl || '')
+      }
     },
     submitFileForm() {
       this.$refs.fileForm.validate(valid => {

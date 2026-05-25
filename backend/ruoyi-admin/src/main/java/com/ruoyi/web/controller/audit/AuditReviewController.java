@@ -1,5 +1,6 @@
 package com.ruoyi.web.controller.audit;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,9 +24,11 @@ import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.enums.BusinessType;
+import com.ruoyi.common.utils.file.FileUtils;
 import com.ruoyi.common.utils.poi.ExcelUtil;
 import com.ruoyi.system.domain.audit.AuditReviewTask;
 import com.ruoyi.system.domain.audit.AuditReviewVersion;
+import com.ruoyi.system.service.audit.impl.AuditReviewVersionPackageService;
 import com.ruoyi.system.service.ISysUserService;
 import com.ruoyi.system.service.audit.IAuditReviewService;
 import com.ruoyi.system.service.audit.support.AuditBusinessPermissionUtils;
@@ -39,6 +42,9 @@ public class AuditReviewController extends BaseController
 
     @Autowired
     private ISysUserService userService;
+
+    @Autowired
+    private AuditReviewVersionPackageService auditReviewVersionPackageService;
 
     @PreAuthorize("@ss.hasPermi('audit:review:list')")
     @GetMapping("/list")
@@ -79,6 +85,20 @@ public class AuditReviewController extends BaseController
     {
         List<AuditReviewVersion> versionList = auditReviewService.selectAuditReviewVersionListByTaskId(taskId);
         return success(versionList);
+    }
+
+    @PreAuthorize("@ss.hasPermi('audit:review:history')")
+    @Log(title = "审核历史版本资料包", businessType = BusinessType.EXPORT)
+    @PostMapping("/version/{versionId}/package")
+    public void packageVersion(@PathVariable Long versionId, HttpServletResponse response) throws IOException
+    {
+        AuditReviewVersionPackageService.PackageFile packageFile =
+                auditReviewVersionPackageService.buildPackage(versionId);
+        byte[] bytes = packageFile.getBytes();
+        response.setContentType("application/zip");
+        response.setContentLength(bytes.length);
+        FileUtils.setAttachmentResponseHeader(response, packageFile.getFileName());
+        response.getOutputStream().write(bytes);
     }
 
     @PreAuthorize("@ss.hasPermi('audit:review:query')")

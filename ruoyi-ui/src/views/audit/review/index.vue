@@ -233,7 +233,10 @@
           </div>
           <div class="history-footer">
             <span>检测状态：{{ selectDictLabel(dict.type.audit_review_task_status, item.detectStatus) }}</span>
-            <el-button type="text" @click="jumpVersionDetail(item)">点击跳转至该版本详情</el-button>
+            <div class="history-actions">
+              <el-button type="text" icon="el-icon-download" @click="downloadVersionPackage(item)">下载</el-button>
+              <el-button type="text" @click="jumpVersionDetail(item)">点击跳转至该版本详情</el-button>
+            </div>
           </div>
         </div>
       </div>
@@ -706,6 +709,14 @@ export default {
         })
       })
     },
+    downloadVersionPackage(row) {
+      if (!row || !row.versionId) {
+        this.$message.warning('版本参数缺失，无法下载')
+        return
+      }
+      const versionNo = this.safeFileName(row.versionNo || row.versionId)
+      this.download('audit/review/version/' + row.versionId + '/package', {}, '审核版本资料包_' + versionNo + '.zip')
+    },
     handleSelectFromLibrary() {
       this.libraryOpen = true
       this.currentLibraryFolder = null
@@ -986,6 +997,12 @@ export default {
           endSubmitTime: this.dateRange && this.dateRange.length ? this.dateRange[1] : undefined
         }
       }, `审核列表_${new Date().getTime()}.xlsx`)
+    },
+    safeFileName(value) {
+      if (value === undefined || value === null || String(value).trim() === '') {
+        return '未命名版本'
+      }
+      return String(value).replace(/[\\/:*?"<>|\s]+/g, '_')
     }
   }
 }
@@ -1353,5 +1370,11 @@ export default {
   justify-content: space-between;
   align-items: center;
   color: #606266;
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 </style>

@@ -32,6 +32,11 @@ import com.ruoyi.system.service.ISysRoleService;
 @Service
 public class SysRoleServiceImpl implements ISysRoleService
 {
+    private static final Long AUDIT_AI_DETAIL_MENU_ID = 2014L;
+
+    private static final Set<Long> AUDIT_REVIEW_LIST_ENTRY_MENU_IDS =
+            new HashSet<>(Arrays.asList(2001L, 2002L, 2003L, 2008L, 2009L));
+
     @Autowired
     private SysRoleMapper roleMapper;
 
@@ -295,7 +300,7 @@ public class SysRoleServiceImpl implements ISysRoleService
         int rows = 1;
         // 新增用户与角色管理
         List<SysRoleMenu> list = new ArrayList<SysRoleMenu>();
-        for (Long menuId : role.getMenuIds())
+        for (Long menuId : completeAuditReviewReadonlyMenuIds(role.getMenuIds()))
         {
             SysRoleMenu rm = new SysRoleMenu();
             rm.setRoleId(role.getRoleId());
@@ -307,6 +312,28 @@ public class SysRoleServiceImpl implements ISysRoleService
             rows = roleMenuMapper.batchRoleMenu(list);
         }
         return rows;
+    }
+
+    /**
+     * 审核列表入口需要跳转只读 AI 任务详情，自动补充隐藏路由权限避免前端 404。
+     */
+    private Long[] completeAuditReviewReadonlyMenuIds(Long[] menuIds)
+    {
+        if (StringUtils.isEmpty(menuIds))
+        {
+            return new Long[0];
+        }
+
+        Set<Long> menuIdSet = new HashSet<Long>(Arrays.asList(menuIds));
+        for (Long menuId : AUDIT_REVIEW_LIST_ENTRY_MENU_IDS)
+        {
+            if (menuIdSet.contains(menuId))
+            {
+                menuIdSet.add(AUDIT_AI_DETAIL_MENU_ID);
+                break;
+            }
+        }
+        return menuIdSet.toArray(new Long[0]);
     }
 
     /**

@@ -8,10 +8,11 @@ export function listLibraryFolders(query) {
   })
 }
 
-export function listLibraryFolderOptions() {
+export function listLibraryFolderOptions(query) {
   return request({
     url: '/audit/library/folder/options',
-    method: 'get'
+    method: 'get',
+    params: query
   })
 }
 

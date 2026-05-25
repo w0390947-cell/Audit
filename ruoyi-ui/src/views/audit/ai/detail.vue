@@ -189,7 +189,8 @@
             v-model="reviewForm.reviewOpinion"
             type="textarea"
             :rows="6"
-            placeholder="请输入文字..."
+            :disabled="isReadonlyMode"
+            :placeholder="defaultReviewOpinionPlaceholder"
             resize="none"
           />
           <div v-if="showDecisionActions" class="decision-actions">
@@ -224,6 +225,8 @@
 <script>
 import { getAiReportPreview, getAiTask, reviewAiTask } from '@/api/audit/ai'
 import { getReview } from '@/api/audit/review'
+
+const DEFAULT_REVIEW_OPINION_PLACEHOLDER = '建议根据 AI 发现问题继续完善内容。'
 
 export default {
   name: 'AuditAiDetail',
@@ -314,8 +317,14 @@ export default {
     canDownloadDetectionResult() {
       return this.detail.taskStatus === 'completed'
     },
+    defaultReviewOpinionPlaceholder() {
+      return DEFAULT_REVIEW_OPINION_PLACEHOLDER
+    },
+    isReadonlyMode() {
+      return this.$route.query.readonly === '1'
+    },
     showDecisionActions() {
-      return this.detail.reviewStatus !== 'approved' || this.reviewDecisionSubmittedInCurrentView
+      return !this.isReadonlyMode && (this.detail.reviewStatus !== 'approved' || this.reviewDecisionSubmittedInCurrentView)
     }
   },
   created() {
@@ -899,7 +908,7 @@ export default {
       }
       getAiTask(this.currentAiTaskId).then(response => {
         this.detail = response.data || { findingList: [] }
-        this.reviewForm.reviewOpinion = this.detail.reviewOpinion || ''
+        this.reviewForm.reviewOpinion = this.normalizeReviewOpinion(this.detail.reviewOpinion)
         this.syncDetailPolling()
         this.getReviewDetail().then(() => {
           this.loading = false
@@ -915,7 +924,7 @@ export default {
       }
       getAiTask(this.currentAiTaskId).then(response => {
         this.detail = response.data || { findingList: [] }
-        this.reviewForm.reviewOpinion = this.detail.reviewOpinion || ''
+        this.reviewForm.reviewOpinion = this.normalizeReviewOpinion(this.detail.reviewOpinion)
         this.syncDetailPolling()
       }).catch(() => {
         this.stopDetailPolling()
@@ -1235,7 +1244,15 @@ export default {
     safeFileName(value) {
       return String(value || '未命名任务').replace(/[\\/:*?"<>|\s]+/g, '_')
     },
+    normalizeReviewOpinion(value) {
+      const opinion = value || ''
+      return opinion === DEFAULT_REVIEW_OPINION_PLACEHOLDER ? '' : opinion
+    },
     submitDecision(reviewStatus) {
+      if (this.isReadonlyMode) {
+        this.$message.warning('当前入口仅支持查看，不能提交审核')
+        return
+      }
       const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId
       if (!aiTaskId) {
         this.$message.warning('AI任务参数缺失，无法提交审核')

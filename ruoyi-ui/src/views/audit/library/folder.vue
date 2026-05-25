@@ -389,7 +389,7 @@ export default {
   props: {
     resourceScope: {
       type: String,
-      default: 'common'
+      default: 'audit'
     },
     allowUpload: {
       type: Boolean,
@@ -424,6 +424,7 @@ export default {
       },
       folderForm: {
         folderId: undefined,
+        libraryType: 'audit',
         parentId: 0,
         folderName: '',
         intro: '',
@@ -457,11 +458,22 @@ export default {
     isTaskScope() {
       return this.resourceScope === 'task'
     },
+    isCommonFileScope() {
+      return this.resourceScope === 'common'
+    },
+    libraryType() {
+      return this.isCommonFileScope ? 'common' : 'audit'
+    },
     rootBreadcrumbName() {
-      return this.isTaskScope ? '任务文件资源' : '全部文件'
+      if (this.isTaskScope) {
+        return '任务文件资源'
+      }
+      return this.isCommonFileScope ? '常用文件资源' : '全部文件'
     },
     canCreateFolder() {
-      return this.$auth.hasPermi('audit:library:folder:add')
+      return this.isCommonFileScope
+        ? this.$auth.hasPermi('audit:library:common:add')
+        : this.$auth.hasPermi('audit:library:folder:add')
     },
     managerItems() {
       return this.folderItems.concat(this.fileItems)
@@ -504,7 +516,7 @@ export default {
       })
     },
     getFolderOptions() {
-      return listLibraryFolderOptions().then(response => {
+      return listLibraryFolderOptions({ libraryType: this.libraryType }).then(response => {
         const folders = response.data || []
         const taskRoot = folders.find(item => item.folderName === '任务文件资源' && (!item.parentId || Number(item.parentId) === 0))
         const taskFolderIds = taskRoot ? this.collectFolderIds(folders, taskRoot.folderId) : []
@@ -539,9 +551,9 @@ export default {
       const folderId = this.currentFolderId
       const resourceRequest = this.isTaskScope
         ? listTaskCommonResource({ folderId, pageNum: 1, pageSize: 999 })
-        : listCommonResource({ folderId, pageNum: 1, pageSize: 999, excludeFolderIds: this.taskFolderIds })
+        : listCommonResource({ libraryType: this.libraryType, folderId, pageNum: 1, pageSize: 999, excludeFolderIds: this.taskFolderIds })
       Promise.all([
-        listLibraryFolders({ parentId: folderId }),
+        listLibraryFolders({ libraryType: this.libraryType, parentId: folderId }),
         resourceRequest
       ]).then(([folderResponse, commonResponse]) => {
         this.folderItems = (folderResponse.data || [])
@@ -570,6 +582,7 @@ export default {
         .filter(item => !keyword || (item.folderName || '').toLowerCase().includes(keyword.toLowerCase()))
         .map(item => this.normalizeFolder(item))
       const commonQuery = this.addDateRange({
+        libraryType: this.libraryType,
         keyword,
         storageStatus: this.queryParams.storageStatus,
         pageNum: 1,
@@ -703,6 +716,7 @@ export default {
     handleAddFolder() {
       this.folderForm = {
         folderId: undefined,
+        libraryType: this.libraryType,
         parentId: this.currentFolderId,
         folderName: '',
         intro: '',
@@ -717,6 +731,7 @@ export default {
       if (item.resourceType === 'folder') {
         this.folderForm = {
           folderId: item.folderId,
+          libraryType: item.libraryType || this.libraryType,
           parentId: item.parentId || 0,
           folderName: item.folderName,
           intro: item.intro || '',
@@ -785,6 +800,7 @@ export default {
         const fileUrl = this.fileForm.fileUrl
         const data = {
           resourceId: this.fileForm.resourceId,
+          libraryType: this.libraryType,
           documentName: this.fileForm.documentName,
           creator: this.fileForm.creator,
           fileUrl,
@@ -815,6 +831,7 @@ export default {
       if (this.movingItem.resourceType === 'folder') {
         request = updateLibraryFolder({
           folderId: this.movingItem.folderId,
+          libraryType: this.movingItem.libraryType || this.libraryType,
           parentId: this.targetFolderId,
           folderName: this.movingItem.folderName,
           intro: this.movingItem.intro || '',
@@ -850,7 +867,11 @@ export default {
     },
     canMoveItem(item) {
       if (!item) return false
-      if (item.resourceType === 'folder') return this.$auth.hasPermi('audit:library:folder:edit')
+      if (item.resourceType === 'folder') {
+        return this.isCommonFileScope
+          ? this.$auth.hasPermi('audit:library:common:edit') || this.$auth.hasPermi('audit:library:common:assignFolder')
+          : this.$auth.hasPermi('audit:library:folder:edit')
+      }
       if (item.resourceType === 'common') {
         return this.isTaskScope
           ? this.$auth.hasPermi('audit:library:task:edit')
@@ -860,7 +881,11 @@ export default {
     },
     canDeleteItem(item) {
       if (!item) return false
-      if (item.resourceType === 'folder') return this.$auth.hasPermi('audit:library:folder:remove')
+      if (item.resourceType === 'folder') {
+        return this.isCommonFileScope
+          ? this.$auth.hasPermi('audit:library:common:remove')
+          : this.$auth.hasPermi('audit:library:folder:remove')
+      }
       if (item.resourceType === 'common') {
         return this.isTaskScope
           ? this.$auth.hasPermi('audit:library:task:remove')

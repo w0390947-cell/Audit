@@ -105,13 +105,15 @@
           <el-button
             size="mini"
             type="text"
+            :disabled="!canViewAiDetail(scope.row)"
             @click="handleDetail(scope.row)"
             v-hasPermi="['audit:review:detail']"
           >详情</el-button>
           <el-button
-            v-if="canEditReview(scope.row)"
+            v-if="canShowEditReview(scope.row)"
             size="mini"
             type="text"
+            :disabled="!canEditReview(scope.row)"
             @click="handleUpdate(scope.row)"
             v-hasPermi="['audit:review:edit']"
           >编辑</el-button>
@@ -509,6 +511,10 @@ export default {
       this.open = true
     },
     handleUpdate(row) {
+      if (!this.canEditReview(row)) {
+        this.$message.warning('已驳回的任务不可编辑')
+        return
+      }
       this.reset()
       getReview(row.taskId).then(response => {
         const data = response.data || {}
@@ -542,6 +548,15 @@ export default {
         && !this.$auth.hasRole('auditor')
     },
     canEditReview(row) {
+      if (!row || row.reviewStatus === 'returned') {
+        return false
+      }
+      if (!this.isCommonSubmitterOnly()) {
+        return true
+      }
+      return row.reviewStatus === 'pending'
+    },
+    canShowEditReview(row) {
       if (!this.isCommonSubmitterOnly()) {
         return true
       }
@@ -647,7 +662,14 @@ export default {
         ...uploadedFile
       })
     },
+    canViewAiDetail(row) {
+      return row.reviewStatus !== 'reviewing'
+    },
     handleDetail(row) {
+      if (!this.canViewAiDetail(row)) {
+        this.$message.warning('审核中的任务暂不能查看AI任务详情')
+        return
+      }
       ensureAiTaskByReviewTask(row.taskId).then(response => {
         const aiTask = response.data || {}
         if (!aiTask.aiTaskId) {
@@ -655,7 +677,8 @@ export default {
           return
         }
         this.$router.push({
-          path: '/audit-ai/detail/' + aiTask.aiTaskId
+          path: '/audit-ai/detail/' + aiTask.aiTaskId,
+          query: { readonly: '1', source: 'review' }
         })
       })
     },
@@ -678,7 +701,8 @@ export default {
         }
         this.historyOpen = false
         this.$router.push({
-          path: '/audit-ai/detail/' + aiTask.aiTaskId
+          path: '/audit-ai/detail/' + aiTask.aiTaskId,
+          query: { readonly: '1', source: 'review-history' }
         })
       })
     },

@@ -8,6 +8,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="aiTaskId" column="ai_task_id"/>
         <result property="reviewTaskId" column="review_task_id"/>
         <result property="reviewVersionId" column="review_version_id"/>
+        <result property="reviewVersionNo" column="review_version_no"/>
         <result property="taskNo" column="task_no"/>
         <result property="productName" column="product_name"/>
         <result property="deliveryUnit" column="delivery_unit"/>
@@ -48,7 +49,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="selectAuditAiTaskVo">
-        select a.ai_task_id, a.review_task_id, a.review_version_id, a.task_no, a.product_name, a.delivery_unit, a.submitter, a.priority,
+        select a.ai_task_id, a.review_task_id, a.review_version_id, v.version_no as review_version_no,
+               a.task_no, a.product_name, a.delivery_unit, a.submitter, a.priority,
                a.queue_position, a.task_status, a.estimated_duration, a.progress_percent, a.progress_text,
                a.ai_analysis_count, a.review_status, a.report_file_name, a.report_file_url,
                coalesce(v.basis_file_urls, r.basis_file_urls) as basis_file_urls,

@@ -115,6 +115,11 @@
         >
           <el-table-column type="selection" width="55" align="center" />
           <el-table-column label="任务编号" align="center" prop="taskNo" min-width="150" />
+          <el-table-column label="版本号" align="center" prop="reviewVersionNo" min-width="90">
+            <template slot-scope="scope">
+              {{ scope.row.reviewVersionNo || '--' }}
+            </template>
+          </el-table-column>
           <el-table-column label="产品名称" align="center" prop="productName" min-width="110" />
           <el-table-column label="送检单位" align="center" prop="deliveryUnit" min-width="110" />
           <el-table-column label="提交人" align="center" prop="submitter" min-width="90" />

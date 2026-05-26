@@ -16,6 +16,8 @@ public class AuditAiTask extends BaseEntity
 
     private Long reviewVersionId;
 
+    private String reviewVersionNo;
+
     private Long[] aiTaskIds;
 
     @Excel(name = "任务编号")
@@ -102,6 +104,16 @@ public class AuditAiTask extends BaseEntity
     public void setReviewVersionId(Long reviewVersionId)
     {
         this.reviewVersionId = reviewVersionId;
+    }
+
+    public String getReviewVersionNo()
+    {
+        return reviewVersionNo;
+    }
+
+    public void setReviewVersionNo(String reviewVersionNo)
+    {
+        this.reviewVersionNo = reviewVersionNo;
     }
 
     public Long[] getAiTaskIds()

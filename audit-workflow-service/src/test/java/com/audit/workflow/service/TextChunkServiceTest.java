@@ -54,4 +54,17 @@ class TextChunkServiceTest {
         assertThat(chunks.get(0).getPageNo()).isNull();
         assertThat(chunks.get(0).getChunkText()).isEqualTo("first paragraph\n\nsecond paragraph");
     }
+
+    @Test
+    void splitRemovesUnsupportedControlCharactersButKeepsUsefulWhitespace() {
+        TextChunkService service = new TextChunkService(1, 1200, 0);
+        ParsedDocument document = new ParsedDocument();
+        document.getBlocks().add(new DocumentBlock("abc\u0000def\tghi\r\njkl\u0007", null, "", ""));
+
+        List<ContentChunk> chunks = service.split(document);
+
+        assertThat(chunks).hasSize(1);
+        assertThat(chunks.get(0).getChunkText()).isEqualTo("abcdef\tghi\njkl");
+        assertThat(chunks.get(0).getChunkText()).doesNotContain("\u0000", "\u0007");
+    }
 }

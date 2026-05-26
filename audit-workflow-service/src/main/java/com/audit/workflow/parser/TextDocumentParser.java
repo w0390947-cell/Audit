@@ -3,6 +3,7 @@ package com.audit.workflow.parser;
 import com.audit.workflow.domain.DocumentBlock;
 import com.audit.workflow.domain.ParsedDocument;
 import com.audit.workflow.support.HashSupport;
+import com.audit.workflow.support.TextSanitizer;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -53,7 +54,7 @@ public class TextDocumentParser implements DocumentParser {
     }
 
     static String normalizeText(String text) {
-        return text == null ? "" : text.replace("\r\n", "\n").replace('\r', '\n').trim();
+        return TextSanitizer.cleanForStorage(text);
     }
 
     static String detectTitle(String block) {

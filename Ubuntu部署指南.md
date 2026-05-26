@@ -1063,6 +1063,23 @@ ruoyi:
 mkdir -p /opt/audit/.runtime/uploadPath
 ```
 
+### 13.11 Nginx 反向代理上传限制
+
+本部署指南默认不强制使用 Nginx。如果你在前端或后端前面额外配置了 Nginx 反向代理，需要显式放开请求体大小限制，否则大文件上传可能会返回 `413 Payload Too Large`。
+
+在对应的 `http`、`server` 或 `location` 配置块中加入：
+
+```nginx
+client_max_body_size 0;
+```
+
+修改后检查并重载 Nginx：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
 ## 14. 部署完成后的最小检查清单
 
 部署完成后，逐项确认：

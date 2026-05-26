@@ -4,6 +4,7 @@ import com.audit.workflow.domain.ContentChunk;
 import com.audit.workflow.domain.DocumentBlock;
 import com.audit.workflow.domain.ParsedDocument;
 import com.audit.workflow.support.HashSupport;
+import com.audit.workflow.support.TextSanitizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -140,7 +141,7 @@ public class TextChunkService {
     }
 
     private String normalize(String text) {
-        return text == null ? "" : text.replace("\r\n", "\n").replace('\r', '\n').trim();
+        return TextSanitizer.cleanForStorage(text);
     }
 
     private String value(String value) {

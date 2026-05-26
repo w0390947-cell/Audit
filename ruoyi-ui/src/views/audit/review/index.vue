@@ -48,7 +48,7 @@
           type="danger"
           plain
           @click="handleDelete()"
-          :disabled="multiple"
+          :disabled="multiple || hasAiReviewingSelection"
           v-hasPermi="['audit:review:remove']"
         >批量删除</el-button>
         <el-button
@@ -89,7 +89,7 @@
           <span :class="['priority-text', 'priority-' + scope.row.priority]">{{ priorityLabel(scope.row.priority) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="审核状态" align="center" prop="reviewStatus" width="110">
+      <el-table-column label="审核状态" align="center" prop="reviewStatus" width="130">
         <template slot-scope="scope">
           <dict-tag :options="dict.type.audit_review_status" :value="scope.row.reviewStatus" />
         </template>
@@ -121,6 +121,7 @@
             size="mini"
             type="text"
             class="delete-btn"
+            :disabled="!canDeleteReview(scope.row)"
             @click="handleDelete(scope.row)"
             v-hasPermi="['audit:review:remove']"
           >删除</el-button>
@@ -180,7 +181,7 @@
             <FileUpload
               v-model="form.mainReportUrls"
               :limit="2"
-              :file-size="20"
+              :file-size="0"
               :is-show-tip="false"
               :dropzone="true"
               button-text="上传文件"
@@ -199,7 +200,7 @@
             <FileUpload
               v-model="form.basisFileUrls"
               :limit="0"
-              :file-size="20"
+              :file-size="0"
               :file-type="basisFileTypes"
               :is-show-tip="false"
               :dropzone="true"
@@ -408,6 +409,7 @@ export default {
       selectedLibraryFiles: {},
       basisFileTypes: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'pdf', 'jpg', 'jpeg', 'png'],
       ids: [],
+      selectedRows: [],
       multiple: true,
       queryParams: {
         pageNum: 1,
@@ -443,6 +445,9 @@ export default {
         const name = String(item.displayName || item.fileName || '').toLowerCase()
         return name.includes(keyword)
       })
+    },
+    hasAiReviewingSelection() {
+      return this.selectedRows.some(this.isAiReviewingReview)
     }
   },
   watch: {
@@ -515,7 +520,7 @@ export default {
     },
     handleUpdate(row) {
       if (!this.canEditReview(row)) {
-        this.$message.warning('已驳回的任务不可编辑')
+        this.$message.warning(this.isAiReviewingReview(row) ? 'AI审核中的任务不可编辑' : '当前任务不可编辑')
         return
       }
       this.reset()
@@ -551,7 +556,7 @@ export default {
         && !this.$auth.hasRole('auditor')
     },
     canEditReview(row) {
-      if (!row || row.reviewStatus === 'returned') {
+      if (!row || row.reviewStatus === 'returned' || this.isAiReviewingReview(row)) {
         return false
       }
       if (!this.isCommonSubmitterOnly()) {
@@ -564,6 +569,12 @@ export default {
         return true
       }
       return row && ['returned', 'pending'].includes(row.reviewStatus)
+    },
+    isAiReviewingReview(row) {
+      return row && row.reviewStatus === 'ai_reviewing'
+    },
+    canDeleteReview(row) {
+      return row && !this.isAiReviewingReview(row)
     },
     submitForm() {
       this.$refs.form.validate(valid => {
@@ -666,11 +677,11 @@ export default {
       })
     },
     canViewAiDetail(row) {
-      return row.reviewStatus !== 'reviewing'
+      return !!row
     },
     handleDetail(row) {
       if (!this.canViewAiDetail(row)) {
-        this.$message.warning('审核中的任务暂不能查看AI任务详情')
+        this.$message.warning('未获取到审核任务信息')
         return
       }
       ensureAiTaskByReviewTask(row.taskId).then(response => {
@@ -680,7 +691,7 @@ export default {
           return
         }
         this.$router.push({
-          path: '/audit-ai/detail/' + aiTask.aiTaskId,
+          path: '/audit-review-ai/detail/' + aiTask.aiTaskId,
           query: { readonly: '1', source: 'review' }
         })
       })
@@ -704,7 +715,7 @@ export default {
         }
         this.historyOpen = false
         this.$router.push({
-          path: '/audit-ai/detail/' + aiTask.aiTaskId,
+          path: '/audit-review-ai/detail/' + aiTask.aiTaskId,
           query: { readonly: '1', source: 'review-history' }
         })
       })
@@ -973,9 +984,15 @@ export default {
     },
     handleSelectionChange(selection) {
       this.ids = selection.map(item => item.taskId)
+      this.selectedRows = selection
       this.multiple = !selection.length
     },
     handleDelete(row) {
+      const targetRows = row ? [row] : this.selectedRows
+      if (targetRows.some(this.isAiReviewingReview)) {
+        this.$message.warning('AI审核中的任务不可删除')
+        return
+      }
       const taskIds = row ? [row.taskId] : this.ids
       if (!taskIds.length) {
         this.$message.warning('请先选择任务')

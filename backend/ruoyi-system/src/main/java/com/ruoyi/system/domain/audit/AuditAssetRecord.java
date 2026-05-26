@@ -40,7 +40,7 @@ public class AuditAssetRecord extends BaseEntity
 
     private String currentAiVersion;
 
-    @Excel(name = "审核状态", dictType = "audit_review_status")
+    @Excel(name = "审核状态", dictType = "audit_asset_review_status")
     private String reviewStatus;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

@@ -71,10 +71,10 @@ export default {
       type: Number,
       default: 5
     },
-    // 大小限制(MB)
+    // 大小限制(MB)，0 表示不限制
     fileSize: {
       type: Number,
-      default: 5
+      default: 0
     },
     // 文件类型, 例如['png', 'jpg', 'jpeg']
     fileType: {

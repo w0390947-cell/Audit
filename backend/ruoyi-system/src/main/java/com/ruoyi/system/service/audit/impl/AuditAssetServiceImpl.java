@@ -252,7 +252,7 @@ public class AuditAssetServiceImpl implements IAuditAssetService
         updateRecord.setAssetId(record.getAssetId());
         updateRecord.setCurrentAiVersion(versionNo);
         updateRecord.setAiAnalysisCount(nextVersionNo);
-        updateRecord.setReviewStatus("pending");
+        updateRecord.setReviewStatus("reviewing");
         updateRecord.setReviewTime(new Date());
         updateRecord.setReportFileName(record.getFileName());
         updateRecord.setReportFileUrl(record.getFileUrl());

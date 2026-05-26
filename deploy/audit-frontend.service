@@ -1,0 +1,20 @@
+[Unit]
+Description=Audit Frontend Vue Dev Service
+Wants=network-online.target
+After=network-online.target audit-backend.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/audit/ruoyi-ui
+EnvironmentFile=-/opt/audit/deploy/audit-services.env
+Environment=NVM_DIR=/home/ubuntu/.nvm
+ExecStart=/bin/bash -lc 'if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh" && nvm use 16; fi; exec npm run dev -- --host 0.0.0.0 --port 5666 --no-open'
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

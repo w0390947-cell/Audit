@@ -1,0 +1,19 @@
+[Unit]
+Description=Audit OCR Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/audit/ocr-service
+EnvironmentFile=-/opt/audit/deploy/audit-services.env
+ExecStart=/opt/audit/ocr-service/.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8866
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

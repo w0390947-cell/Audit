@@ -32,7 +32,7 @@
             <td>{{ detail.aiAnalysisCount || 3 }}</td>
             <th>任务审核状态</th>
             <td>
-              <dict-tag v-if="detail.reviewStatus" :options="dict.type.audit_review_status" :value="detail.reviewStatus" />
+              <dict-tag v-if="detail.reviewStatus" :options="dict.type.audit_asset_review_status" :value="detail.reviewStatus" />
               <span v-else class="status-chip success">审核通过</span>
             </td>
           </tr>
@@ -247,7 +247,7 @@ import { getAsset, reuploadAsset } from '@/api/audit/asset'
 export default {
   name: 'AuditAssetDetail',
   components: { FileUpload },
-  dicts: ['audit_review_status'],
+  dicts: ['audit_asset_review_status'],
   data() {
     return {
       loading: true,

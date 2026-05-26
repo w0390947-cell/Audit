@@ -24,7 +24,7 @@ CREATE TABLE `audit_asset_record` (
   `permission_owner` varchar(64) DEFAULT '' COMMENT '权限分配对象',
   `ai_analysis_count` int DEFAULT '0' COMMENT 'AI分析次数',
   `current_ai_version` varchar(20) DEFAULT '' COMMENT '当前AI版本',
-  `review_status` varchar(20) DEFAULT 'pending' COMMENT '审核状态',
+  `review_status` varchar(20) DEFAULT 'reviewing' COMMENT '审核状态',
   `review_time` datetime DEFAULT NULL COMMENT '审核时间',
   `report_file_name` varchar(255) DEFAULT '' COMMENT '报告文件名称',
   `report_file_url` varchar(500) DEFAULT '' COMMENT '报告文件地址',
@@ -210,12 +210,13 @@ CREATE TABLE IF NOT EXISTS `audit_vector_eval_case` (
   KEY `idx_audit_vector_eval_case_enabled` (`enabled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审核知识库召回评估样例表';
 
-DELETE FROM `sys_dict_data` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status');
-DELETE FROM `sys_dict_type` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status');
+DELETE FROM `sys_dict_data` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status', 'audit_asset_review_status');
+DELETE FROM `sys_dict_type` WHERE `dict_type` IN ('audit_file_storage_status', 'audit_task_collect_status', 'audit_asset_review_status');
 
 INSERT INTO `sys_dict_type` (`dict_id`, `dict_name`, `dict_type`, `status`, `create_by`, `create_time`, `remark`) VALUES
 (2012, '向量化状态', 'audit_file_storage_status', '0', 'admin', NOW(), '审核资源库'),
-(2013, '任务文件采集状态', 'audit_task_collect_status', '0', 'admin', NOW(), '审核资源库');
+(2013, '任务文件采集状态', 'audit_task_collect_status', '0', 'admin', NOW(), '审核资源库'),
+(2014, '审核资产状态', 'audit_asset_review_status', '0', 'admin', NOW(), '审核资产库');
 
 INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value`, `dict_type`, `list_class`, `is_default`, `status`, `create_by`, `create_time`) VALUES
 (2404, 1, '等待向量化', 'pending', 'audit_file_storage_status', 'info', 'Y', '0', 'admin', NOW()),
@@ -227,7 +228,10 @@ INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value
 (2403, 7, '向量化失败', 'failed', 'audit_file_storage_status', 'danger', 'N', '0', 'admin', NOW()),
 (2411, 1, '归集处理中', 'processing', 'audit_task_collect_status', 'primary', 'N', '0', 'admin', NOW()),
 (2412, 2, '已归集', 'archived', 'audit_task_collect_status', 'success', 'Y', '0', 'admin', NOW()),
-(2413, 3, '归集失败', 'failed', 'audit_task_collect_status', 'danger', 'N', '0', 'admin', NOW());
+(2413, 3, '归集失败', 'failed', 'audit_task_collect_status', 'danger', 'N', '0', 'admin', NOW()),
+(2421, 1, '驳回', 'returned', 'audit_asset_review_status', 'danger', 'N', '0', 'admin', NOW()),
+(2422, 2, '审核通过', 'approved', 'audit_asset_review_status', 'success', 'N', '0', 'admin', NOW()),
+(2423, 3, '待人工审核', 'reviewing', 'audit_asset_review_status', 'warning', 'Y', '0', 'admin', NOW());
 
 DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2021 AND 2050;
 DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2021 AND 2050;

@@ -79,12 +79,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 and a.submitter = #{submitter}
             </if>
         </where>
-        order by case a.task_status
-            when 'executing' then 1
-            when 'waiting' then 2
-            when 'paused' then 3
-            else 4 end asc,
-            a.queue_position asc, a.ai_task_id asc
+        order by a.create_time desc, a.ai_task_id desc
     </select>
 
     <select id="selectAuditAiAllList" resultMap="AuditAiTaskResult">

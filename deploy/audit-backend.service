@@ -1,0 +1,19 @@
+[Unit]
+Description=Audit RuoYi Backend Service
+Wants=network-online.target
+After=network-online.target mysql.service postgresql.service audit-ocr.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/audit/backend
+EnvironmentFile=-/opt/audit/deploy/audit-services.env
+ExecStart=/usr/bin/java -jar /opt/audit/backend/ruoyi-admin/target/ruoyi-admin.jar --ruoyi.profile=/opt/audit/.runtime/uploadPath
+Restart=always
+RestartSec=10
+SuccessExitStatus=143
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

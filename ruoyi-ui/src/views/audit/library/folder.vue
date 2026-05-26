@@ -294,7 +294,7 @@
             <FileUpload
               v-model="fileForm.fileUrl"
               :limit="1"
-              :file-size="30"
+              :file-size="0"
               :file-type="libraryFileTypes"
               :dropzone="true"
               button-text="上传文件"

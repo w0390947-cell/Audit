@@ -25,7 +25,7 @@
       <el-form-item label="审核状态" prop="reviewStatus">
         <el-select v-model="queryParams.reviewStatus" clearable placeholder="请选择审核状态" style="width: 220px">
           <el-option
-            v-for="dict in dict.type.audit_review_status"
+            v-for="dict in dict.type.audit_asset_review_status"
             :key="dict.value"
             :label="dict.label"
             :value="dict.value"
@@ -126,7 +126,7 @@
           <el-table-column label="AI分析次数" align="center" prop="aiAnalysisCount" width="100" />
           <el-table-column label="审核状态" align="center" prop="reviewStatus" width="120">
             <template slot-scope="scope">
-              <dict-tag :options="dict.type.audit_review_status" :value="scope.row.reviewStatus" />
+              <dict-tag :options="dict.type.audit_asset_review_status" :value="scope.row.reviewStatus" />
             </template>
           </el-table-column>
           <el-table-column label="操作" align="left" min-width="340" class-name="small-padding">
@@ -227,7 +227,7 @@ import {
 
 export default {
   name: 'AuditAsset',
-  dicts: ['audit_review_status'],
+  dicts: ['audit_asset_review_status'],
   data() {
     return {
       loading: true,

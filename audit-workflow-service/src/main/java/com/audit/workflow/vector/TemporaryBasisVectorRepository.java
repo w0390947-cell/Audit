@@ -3,6 +3,7 @@ package com.audit.workflow.vector;
 import com.audit.workflow.domain.AuditTask;
 import com.audit.workflow.domain.ContentChunk;
 import com.audit.workflow.support.JsonSupport;
+import com.audit.workflow.support.TextSanitizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -219,7 +220,7 @@ public class TemporaryBasisVectorRepository {
     }
 
     private String value(String value) {
-        return value == null ? "" : value;
+        return TextSanitizer.cleanForStorage(value);
     }
 
     public record BasisDocument(String fileId, String fileName, String fileUrl, String fileHash, List<ContentChunk> chunks) {
@@ -257,10 +258,10 @@ public class TemporaryBasisVectorRepository {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("source", "uploaded_basis_files");
         metadata.put("task_id", taskId);
-        metadata.put("task_no", taskNo);
-        metadata.put("basis_file_id", fileId);
-        metadata.put("basis_file_name", fileName);
-        metadata.put("basis_file_url", fileUrl);
+        metadata.put("task_no", TextSanitizer.cleanForStorage(taskNo));
+        metadata.put("basis_file_id", TextSanitizer.cleanForStorage(fileId));
+        metadata.put("basis_file_name", TextSanitizer.cleanForStorage(fileName));
+        metadata.put("basis_file_url", TextSanitizer.cleanForStorage(fileUrl));
         return metadata;
     }
 }

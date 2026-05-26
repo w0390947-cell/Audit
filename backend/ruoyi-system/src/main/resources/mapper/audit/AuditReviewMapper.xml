@@ -100,30 +100,72 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </sql>
 
     <select id="selectAuditReviewTaskList" parameterType="AuditReviewTask" resultMap="AuditReviewTaskResult">
-        <include refid="selectAuditReviewTaskVo"/>
+        select t.task_id, t.task_no, t.product_name, t.delivery_unit, t.sponsor, t.handler_name, t.priority,
+               t.ai_analysis_count, t.task_status,
+               case
+                   when ai.task_status in ('waiting', 'executing', 'paused') then 'ai_reviewing'
+                   when ai.task_status = 'failed' then 'ai_failed'
+                   when ai.ai_task_id is not null then coalesce(ai.review_status, 'reviewing')
+                   else 'reviewing'
+               end as review_status,
+               t.process_flag, t.current_version_no, t.main_report_urls, t.basis_file_urls, t.appendix_file_urls,
+               t.submit_time, t.del_flag, t.create_by, t.create_time, t.update_by, t.update_time, t.remark
+        from audit_review_task t
+        left join audit_review_version cv on cv.version_id = (
+            select v.version_id
+            from audit_review_version v
+            where v.task_id = t.task_id
+            order by v.current_flag desc, v.submit_time desc, v.version_id desc
+            limit 1
+        )
+        left join audit_ai_task ai on ai.ai_task_id = (
+            select a.ai_task_id
+            from audit_ai_task a
+            where a.review_task_id = t.task_id
+              and a.del_flag = '0'
+              and (a.review_version_id = cv.version_id
+                   or (a.review_version_id is null and cv.version_no = 'v1.0'))
+            order by (a.review_version_id is null) asc, a.ai_task_id desc
+            limit 1
+        )
         <where>
-            del_flag = '0'
+            t.del_flag = '0'
             <if test="keyword != null and keyword != ''">
-                and (task_no like concat('%', #{keyword}, '%')
-                    or product_name like concat('%', #{keyword}, '%'))
+                and (t.task_no like concat('%', #{keyword}, '%')
+                    or t.product_name like concat('%', #{keyword}, '%'))
             </if>
             <if test="taskStatus != null and taskStatus != ''">
-                and task_status = #{taskStatus}
+                and t.task_status = #{taskStatus}
             </if>
             <if test="reviewStatus != null and reviewStatus != ''">
-                and review_status = #{reviewStatus}
+                <choose>
+                    <when test="reviewStatus == 'ai_reviewing'">
+                        and ai.task_status in ('waiting', 'executing', 'paused')
+                    </when>
+                    <when test="reviewStatus == 'ai_failed'">
+                        and ai.task_status = 'failed'
+                    </when>
+                    <otherwise>
+                        and (case
+                            when ai.task_status in ('waiting', 'executing', 'paused') then 'ai_reviewing'
+                            when ai.task_status = 'failed' then 'ai_failed'
+                            when ai.ai_task_id is not null then coalesce(ai.review_status, 'reviewing')
+                            else 'reviewing'
+                        end) = #{reviewStatus}
+                    </otherwise>
+                </choose>
             </if>
             <if test="createBy != null and createBy != ''">
-                and create_by = #{createBy}
+                and t.create_by = #{createBy}
             </if>
             <if test="params.beginSubmitTime != null and params.beginSubmitTime != ''">
-                and submit_time <![CDATA[ >= ]]> concat(#{params.beginSubmitTime}, ' 00:00:00')
+                and t.submit_time <![CDATA[ >= ]]> concat(#{params.beginSubmitTime}, ' 00:00:00')
             </if>
             <if test="params.endSubmitTime != null and params.endSubmitTime != ''">
-                and submit_time <![CDATA[ <= ]]> concat(#{params.endSubmitTime}, ' 23:59:59')
+                and t.submit_time <![CDATA[ <= ]]> concat(#{params.endSubmitTime}, ' 23:59:59')
             </if>
         </where>
-        order by submit_time desc, task_id desc
+        order by t.submit_time desc, t.task_id desc
     </select>
 
     <select id="selectAuditReviewStats" parameterType="AuditReviewTask" resultType="AuditReviewStats">

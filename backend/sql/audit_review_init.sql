@@ -115,9 +115,11 @@ INSERT INTO `sys_dict_data` (`dict_code`, `dict_sort`, `dict_label`, `dict_value
 (2203, 3, '已检测', 'detected', 'audit_review_task_status', 'success', 'N', '0', 'admin', NOW()),
 (2204, 4, '已暂停', 'paused', 'audit_review_task_status', 'info', 'N', '0', 'admin', NOW()),
 (2301, 1, '审核通过', 'approved', 'audit_review_status', 'success', 'N', '0', 'admin', NOW()),
-(2304, 2, '审核中', 'reviewing', 'audit_review_status', 'primary', 'Y', '0', 'admin', NOW()),
-(2302, 3, '待修改', 'pending', 'audit_review_status', 'warning', 'N', '0', 'admin', NOW()),
-(2303, 4, '驳回', 'returned', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW());
+(2305, 2, 'AI审核中', 'ai_reviewing', 'audit_review_status', 'primary', 'N', '0', 'admin', NOW()),
+(2304, 3, '待人工审核', 'reviewing', 'audit_review_status', 'warning', 'Y', '0', 'admin', NOW()),
+(2302, 4, '待修改', 'pending', 'audit_review_status', 'warning', 'N', '0', 'admin', NOW()),
+(2303, 5, '驳回', 'returned', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW()),
+(2306, 6, 'AI审核失败', 'ai_failed', 'audit_review_status', 'danger', 'N', '0', 'admin', NOW());
 
 DELETE FROM `sys_role_menu` WHERE `menu_id` BETWEEN 2001 AND 2010;
 DELETE FROM `sys_menu` WHERE `menu_id` BETWEEN 2001 AND 2010;

@@ -1,0 +1,19 @@
+[Unit]
+Description=Audit Workflow Service
+Wants=network-online.target
+After=network-online.target mysql.service postgresql.service audit-ocr.service audit-backend.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/audit/audit-workflow-service
+EnvironmentFile=-/opt/audit/deploy/audit-services.env
+ExecStart=/usr/bin/java -jar /opt/audit/audit-workflow-service/target/audit-workflow-service-0.0.1-SNAPSHOT.jar
+Restart=always
+RestartSec=10
+SuccessExitStatus=143
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

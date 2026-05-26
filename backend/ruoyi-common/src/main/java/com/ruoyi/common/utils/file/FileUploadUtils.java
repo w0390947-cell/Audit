@@ -24,11 +24,6 @@ import com.ruoyi.common.utils.uuid.Seq;
 public class FileUploadUtils
 {
     /**
-     * 默认大小 50M
-     */
-    public static final long DEFAULT_MAX_SIZE = 50 * 1024 * 1024L;
-
-    /**
      * 默认的文件名最大长度 100
      */
     public static final int DEFAULT_FILE_NAME_LENGTH = 100;
@@ -94,7 +89,6 @@ public class FileUploadUtils
      * @param file 上传的文件
      * @param allowedExtension 上传文件类型
      * @return 返回上传成功的文件名
-     * @throws FileSizeLimitExceededException 如果超出最大大小
      * @throws FileNameLengthLimitExceededException 文件名太长
      * @throws IOException 比如读写文件出错时
      * @throws InvalidExtensionException 文件校验异常
@@ -176,22 +170,15 @@ public class FileUploadUtils
     }
 
     /**
-     * 文件大小校验
+     * 文件类型校验
      *
      * @param file 上传的文件
      * @return
-     * @throws FileSizeLimitExceededException 如果超出最大大小
      * @throws InvalidExtensionException
      */
     public static final void assertAllowed(MultipartFile file, String[] allowedExtension)
             throws FileSizeLimitExceededException, InvalidExtensionException
     {
-        long size = file.getSize();
-        if (size > DEFAULT_MAX_SIZE)
-        {
-            throw new FileSizeLimitExceededException(DEFAULT_MAX_SIZE / 1024 / 1024);
-        }
-
         String fileName = file.getOriginalFilename();
         String extension = getExtension(file);
         if (allowedExtension != null && !isAllowedExtension(extension, allowedExtension))

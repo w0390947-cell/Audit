@@ -115,8 +115,8 @@
         >
           <el-table-column type="selection" width="52" align="center" />
           <el-table-column label="任务编号" align="left" prop="taskNo" min-width="150" />
-          <el-table-column label="产品名称" align="left" prop="productName" min-width="120" />
-          <el-table-column label="送检单位" align="left" prop="deliveryUnit" min-width="120" />
+          <el-table-column label="文件名称" align="left" prop="productName" min-width="120" />
+          <el-table-column label="文件位置" align="left" prop="deliveryUnit" min-width="120" />
           <el-table-column label="上传者" align="left" prop="submitter" min-width="100" />
           <el-table-column label="审核时间" align="center" prop="reviewTime" min-width="160">
             <template slot-scope="scope">

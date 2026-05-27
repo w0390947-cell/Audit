@@ -189,14 +189,14 @@
             v-model="reviewForm.reviewOpinion"
             type="textarea"
             :rows="6"
-            :disabled="isReadonlyMode"
+            :disabled="isReviewOpinionDisabled"
             :placeholder="defaultReviewOpinionPlaceholder"
             resize="none"
           />
           <div v-if="showDecisionActions" class="decision-actions">
-            <el-button type="primary" size="small" @click="submitDecision('approved')" v-hasPermi="['audit:ai:review']">审核通过</el-button>
-            <el-button size="small" @click="submitDecision('pending')" v-hasPermi="['audit:ai:review']">待修改</el-button>
-            <el-button type="danger" size="small" @click="submitDecision('returned')" v-hasPermi="['audit:ai:review']">驳回</el-button>
+            <el-button type="primary" size="small" :disabled="!canSubmitReviewDecision" @click="submitDecision('approved')" v-hasPermi="['audit:ai:review']">审核通过</el-button>
+            <el-button size="small" :disabled="!canSubmitReviewDecision" @click="submitDecision('pending')" v-hasPermi="['audit:ai:review']">待修改</el-button>
+            <el-button type="danger" size="small" :disabled="!canSubmitReviewDecision" @click="submitDecision('returned')" v-hasPermi="['audit:ai:review']">驳回</el-button>
           </div>
         </div>
       </div>
@@ -322,6 +322,15 @@ export default {
     },
     isReadonlyMode() {
       return this.$route.query.readonly === '1'
+    },
+    isAiTaskCompleted() {
+      return this.detail.taskStatus === 'completed'
+    },
+    canSubmitReviewDecision() {
+      return !this.isReadonlyMode && this.isAiTaskCompleted
+    },
+    isReviewOpinionDisabled() {
+      return !this.canSubmitReviewDecision
     },
     showDecisionActions() {
       return !this.isReadonlyMode && (this.detail.reviewStatus !== 'approved' || this.reviewDecisionSubmittedInCurrentView)
@@ -1251,6 +1260,10 @@ export default {
     submitDecision(reviewStatus) {
       if (this.isReadonlyMode) {
         this.$message.warning('当前入口仅支持查看，不能提交审核')
+        return
+      }
+      if (!this.isAiTaskCompleted) {
+        this.$message.warning('AI审核完成后才可进行人工审核')
         return
       }
       const aiTaskId = this.detail.aiTaskId || this.currentAiTaskId

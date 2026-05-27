@@ -207,6 +207,10 @@ public class AuditAiServiceImpl implements IAuditAiService
         {
             return 0;
         }
+        if (!"completed".equals(dbTask.getTaskStatus()))
+        {
+            throw new ServiceException("AI审核完成后才可进行人工审核");
+        }
         task.setReviewer(task.getUpdateBy());
         if ("approved".equals(task.getReviewStatus()))
         {

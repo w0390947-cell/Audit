@@ -726,7 +726,9 @@ export default {
         return
       }
       const versionNo = this.safeFileName(row.versionNo || row.versionId)
-      this.download('audit/review/version/' + row.versionId + '/package', {}, '审核版本资料包_' + versionNo + '.zip')
+      this.download('audit/review/version/' + row.versionId + '/package', {}, '审核版本资料包_' + versionNo + '.zip', {
+        timeout: 120000
+      })
     },
     handleSelectFromLibrary() {
       this.libraryOpen = true

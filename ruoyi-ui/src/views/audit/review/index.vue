@@ -182,6 +182,7 @@
               v-model="form.mainReportUrls"
               :limit="2"
               :file-size="0"
+              :file-type="mainReportFileTypes"
               :is-show-tip="false"
               :dropzone="true"
               button-text="上传文件"
@@ -407,6 +408,7 @@ export default {
       libraryKeyword: '',
       libraryGlobalLoaded: false,
       selectedLibraryFiles: {},
+      mainReportFileTypes: ['pdf'],
       basisFileTypes: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'pdf', 'jpg', 'jpeg', 'png'],
       ids: [],
       selectedRows: [],
